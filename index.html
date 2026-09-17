@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Wordle Game</title>
+        <link rel="stylesheet" href="styles.css" />
+    </head>
+    <body>
+        <div class="ambient ambient-one" aria-hidden="true"></div>
+        <div class="ambient ambient-two" aria-hidden="true"></div>
+        <div class="container">
+            <header class="header">
+                <div class="brand-lockup">
+                    <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+                    <div>
+                        <p class="eyebrow">DAILY WORD CHALLENGE</p>
+                        <h1 class="title">WORDLE</h1>
+                        <p class="subtitle">Guess the word. Beat the challenge.</p>
+                    </div>
+                </div>
+                <div class="header-tools">
+                    <div class="language-buttons" aria-label="Language selection">
+                        <button id="englishBtn" class="lang-btn active" type="button">EN</button>
+                        <button id="turkishBtn" class="lang-btn" type="button">TR</button>
+                    </div>
+                    <div class="header-actions"></div>
+                </div>
+            </header>
+
+            <main class="main">
+                <section class="game-meta" aria-label="Game status">
+                    <div>
+                        <p class="eyebrow">CURRENT RUN</p>
+                        <h2 id="gameStatus">Make your first guess</h2>
+                    </div>
+                    <div class="attempt-meter">
+                        <span class="meta-label">ATTEMPTS</span>
+                        <strong id="attemptCount">0 / 6</strong>
+                        <div class="attempt-dots" id="attemptDots" aria-hidden="true"></div>
+                    </div>
+                    <button id="hintButton" class="hint-button" type="button">
+                        <span aria-hidden="true">&#128161;</span>
+                        <span>HINT</span>
+                        <strong id="hintCount">2 left</strong>
+                    </button>
+                </section>
+
+                <section class="play-layout">
+                    <div class="board-panel">
+                        <div class="board" aria-label="Word guesses">
+                    <div class="row">
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                    </div>
+                    <div class="row">
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                    </div>
+                    <div class="row">
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                    </div>
+                    <div class="row">
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                    </div>
+                    <div class="row">
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                    </div>
+                    <div class="row">
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                        <div class="tile" data-state="empty"></div>
+                    </div>
+                        </div>
+                        <p class="board-hint"><span class="hint-key">ENTER</span> to submit <span class="hint-key">BACKSPACE</span> to erase</p>
+                    </div>
+
+                    <aside class="side-rail" aria-label="Game information">
+                        <section class="info-card">
+                            <div class="section-heading"><span class="section-icon">?</span><h3>How to play</h3></div>
+                            <p>Find the hidden five-letter word in six tries.</p>
+                            <div class="legend"><span class="legend-swatch correct"></span><span>Right letter, right spot</span></div>
+                            <div class="legend"><span class="legend-swatch present"></span><span>Right letter, wrong spot</span></div>
+                            <div class="legend"><span class="legend-swatch absent"></span><span>Not in the word</span></div>
+                        </section>
+                        <section class="stats-card">
+                            <div class="section-heading"><span class="section-icon">+</span><h3>Your stats</h3></div>
+                            <div class="stats-grid">
+                                <div><strong id="gamesPlayed">0</strong><span>Played</span></div>
+                                <div><strong id="gamesWon">0</strong><span>Won</span></div>
+                                <div><strong id="currentStreak">0</strong><span>Streak</span></div>
+                            </div>
+                        </section>
+                    </aside>
+                </section>
+
+                <section class="keyboard-wrap">
+                    <div class="keyboard-heading"><span>KEYBOARD</span><span class="keyboard-tip">Your turn</span></div>
+                    <section class="keyboard" aria-label="On-screen keyboard"></section>
+                </section>
+            </main>
+        </div>
+        <div id="toast" class="toast" role="status" aria-live="polite"></div>
+        <div id="popup" class="modal" aria-hidden="true"></div>
+        <script type="module" src="script.js"></script>
+    </body>
+</html>
