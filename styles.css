@@ -171,16 +171,30 @@ button { font: inherit; }
     .side-rail { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 520px) {
+    body { padding: 14px 10px 24px; touch-action: manipulation; }
     .header { margin-bottom: 23px; }
     .header-tools { width: 100%; }
     .language-buttons { margin-left: auto; }
     .header-actions { margin-left: auto; }
-    .board-panel { padding: 18px 10px 14px; }
-    .row { gap: 6px; grid-template-columns: repeat(5, minmax(0, 1fr)); width: min(100%, 320px); }
+    .main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 8px; }
+    .game-meta { grid-column: 1 / -1; grid-row: 1; }
+    .play-layout { display: contents; }
+    .board-panel { grid-column: 1; grid-row: 2; min-width: 0; padding: 14px 6px 12px; }
+    .row { gap: 4px; grid-template-columns: repeat(5, minmax(0, 1fr)); width: 100%; }
     .board { gap: 6px; width: 100%; }
-    .key { min-height: 39px; padding: 7px 2px; }
-    .keyboard-row { gap: 4px; }
-    .side-rail { grid-template-columns: 1fr; }
+    .keyboard-wrap { grid-column: 2; grid-row: 2; margin: 0; max-width: none; min-width: 0; width: 100%; }
+    .keyboard-heading { font-size: 8px; letter-spacing: .1em; }
+    .keyboard-row { gap: 2px; }
+    .key { min-height: 35px; min-width: 0; padding: 6px 1px; font-size: 9px; }
+    .key.wide { font-size: 8px; }
+    .side-rail { grid-column: 1 / -1; grid-row: 3; display: flex; flex-direction: column; gap: 12px; min-width: 0; padding-top: 42px; position: relative; }
+    .how-to-play-card { background: transparent; border: 0; padding: 0; position: absolute; right: 0; top: 0; z-index: 2; }
+    .how-to-play-card .section-heading { justify-content: flex-end; }
+    .how-to-play-card .section-heading h3 { display: none; }
+    .how-to-play-card .section-icon { cursor: pointer; }
+    .how-to-play-content { background: var(--surface-solid); border: 1px solid var(--border); border-radius: 12px; display: none; padding: 14px; position: absolute; right: 0; top: 32px; width: min(260px, calc(100vw - 20px)); }
+    .how-to-play-card.expanded .how-to-play-content { display: block; }
+    .stats-card { width: 100%; }
     .login-form { padding: 27px 22px; }
     .game-meta { align-items: stretch; display: grid; grid-template-columns: 1fr auto; }
     .hint-button { grid-column: 1 / -1; justify-content: center; margin-top: 2px; }

@@ -583,6 +583,16 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    const howToPlayToggle = document.getElementById('howToPlayToggle');
+    const howToPlayCard = document.querySelector('.how-to-play-card');
+    if (howToPlayToggle && howToPlayCard) {
+        howToPlayToggle.addEventListener('click', () => {
+            const expanded = howToPlayCard.classList.toggle('expanded');
+            howToPlayToggle.setAttribute('aria-expanded', String(expanded));
+            howToPlayToggle.setAttribute('aria-label', expanded ? 'Hide how to play' : 'Show how to play');
+        });
+    }
+
     init();
 });
 
