@@ -1,8 +1,6 @@
 // Wordle Game - Backend-driven version
 const API_URL = 'http://127.0.0.1:8080';
-const ADMIN_EMAIL = 'salemalyusof@gmail.com';
 
-let currentUser = null;
 let selectedLanguage = 'english';
 let sessionId = null;
 let words = [];
@@ -30,7 +28,6 @@ let toastTimer = null;
 let hintsUsed = 0;
 const revealedHintPositions = new Set();
 const revealedHintLetters = new Map();
-let adminCreatorAuth = null;
 const maxAttempts = 6;
 const keyboardLetterStatuses = new Map();
 const keyboardStatusPriority = {
@@ -38,54 +35,6 @@ const keyboardStatusPriority = {
     present: 2,
     correct: 3
 };
-
-function isAdmin() {
-    return currentUser?.email?.toLowerCase() === ADMIN_EMAIL;
-}
-
-function getAdminCreatorAuth() {
-    if (!adminCreatorAuth) {
-        const adminApp = initializeApp(firebaseConfig, 'admin-user-creator');
-        adminCreatorAuth = getAuth(adminApp);
-    }
-    return adminCreatorAuth;
-}
-
-// ================= USERS =================
-
-function showAuthMessage(message) {
-    const messageEl = document.querySelector('#signOverlay:not(.hidden) #signupMessage, #loginOverlay:not(.hidden) #loginMessage');
-    if (messageEl) messageEl.textContent = message;
-}
-
-function setAuthenticatedUser(user) {
-    currentUser = user;
-    const savedLanguage = localStorage.getItem('wordleLanguage');
-    if (savedLanguage) {
-        selectedLanguage = savedLanguage;
-    }
-
-    updateLanguageButtonUI();
-
-    const loginOverlay = document.getElementById('loginOverlay');
-    const signOverlay = document.getElementById('signOverlay');
-    const main = document.querySelector('.main');
-
-    if (loginOverlay) loginOverlay.classList.add('hidden');
-    if (signOverlay) signOverlay.classList.add('hidden');
-    if (main) main.classList.remove('hidden');
-    init();
-}
-
-function clearAuthenticatedUser() {
-    currentUser = null;
-    appInitialized = false;
-    document.getElementById('adminPanel')?.remove();
-    document.getElementById('adminToggleBtn')?.remove();
-    const main = document.querySelector('.main');
-    if (main) main.classList.add('hidden');
-    setAuthScreen('login');
-}
 
 // Handle language selection
 function handleLanguageSelect(language) {
@@ -214,7 +163,7 @@ function applyHintsToCurrentRow() {
 }
 
 function getStatsKey() {
-    return `wordleStats:${currentUser?.uid || 'guest'}`;
+    return 'wordleStats:guest';
 }
 
 function readStats() {
@@ -245,113 +194,6 @@ function recordGame(won) {
     stats.streak = won ? stats.streak + 1 : 0;
     localStorage.setItem(getStatsKey(), JSON.stringify(stats));
     renderStats();
-}
-
-// ================= LOGIN =================
-
-async function handleLogin(event) {
-    event.preventDefault();
-
-    const userInput = document.getElementById('username');
-    const passInput = document.getElementById('password');
-    const messageEl = document.getElementById('loginMessage');
-
-    if (!userInput || !passInput) {
-        console.error('Login inputs are missing from the page.');
-        return;
-    }
-
-    const email = userInput.value.trim();
-    const pass = passInput.value;
-
-    if (!email || !pass) {
-        if (messageEl) messageEl.textContent = 'Enter an email and password';
-        return;
-    }
-
-    try {
-        await signInWithEmailAndPassword(auth, email, pass);
-        if (messageEl) messageEl.textContent = '';
-    } catch (error) {
-        console.error('Login failed:', error);
-        showAuthMessage(getAuthErrorMessage(error));
-    }
-}
-
-function getAuthErrorMessage(error) {
-    const messages = {
-        'auth/invalid-credential': 'Incorrect email or password.',
-        'auth/invalid-email': 'Enter a valid email address.',
-        'auth/email-already-in-use': 'An account already exists for this email.',
-        'auth/weak-password': 'Password must be at least 6 characters.',
-        'auth/unauthorized-domain': 'Open the game from localhost or add this domain in Firebase Console.',
-        'auth/popup-closed-by-user': 'Google sign-in was cancelled.'
-    };
-    return messages[error.code] || 'Authentication failed. Please try again.';
-}
-
-async function handleGoogleLogin() {
-    try {
-        await signInWithPopup(auth, provider);
-        showAuthMessage('');
-    } catch (error) {
-        console.error('Google login failed:', error);
-        showAuthMessage(getAuthErrorMessage(error));
-    }
-}
-
-function setAuthScreen(mode) {
-    const loginOverlay = document.getElementById('loginOverlay');
-    const signOverlay = document.getElementById('signOverlay');
-    const main = document.querySelector('.main');
-
-    if (main) main.classList.add('hidden');
-
-    if (loginOverlay) {
-        loginOverlay.classList.toggle('hidden', mode !== 'login');
-        loginOverlay.classList.toggle('off', mode !== 'login');
-    }
-
-    if (signOverlay) {
-        signOverlay.classList.toggle('hidden', mode !== 'signup');
-        signOverlay.classList.toggle('on', mode === 'signup');
-    }
-}
-
-async function handleSignup(event) {
-    event.preventDefault();
-
-    const usernameInput = document.getElementById('signupUsername');
-    const passwordInput = document.getElementById('signupPassword');
-    const confirmInput = document.getElementById('confirmPassword');
-    const messageEl = document.getElementById('signupMessage');
-
-    if (!usernameInput || !passwordInput || !confirmInput) {
-        console.error('Signup form fields are missing from the page.');
-        return;
-    }
-
-    const email = usernameInput.value.trim();
-    const password = passwordInput.value;
-    const confirmPassword = confirmInput.value;
-
-    if (!email || !password || !confirmPassword) {
-        if (messageEl) messageEl.textContent = 'Please fill in all signup fields';
-        return;
-    }
-
-    if (password !== confirmPassword) {
-        if (messageEl) messageEl.textContent = 'Passwords do not match';
-        return;
-    }
-
-    try {
-        await createUserWithEmailAndPassword(auth, email, password);
-        if (messageEl) messageEl.textContent = '';
-    } catch (error) {
-        console.error('Signup failed:', error);
-        showAuthMessage(getAuthErrorMessage(error));
-    }
 }
 
 // ================= WORD LOGIC (Backend API) =================
@@ -616,109 +458,6 @@ function updateKeyboardLayout() {
     });
 }
 
-async function revealSecretWord() {
-    if (!isAdmin()) {
-        showMessage('Administrator access required');
-        return;
-    }
-    if (!sessionId) {
-        showMessage('No active game session');
-        return;
-    }
-
-    try {
-        const resp = await fetch(`${API_URL}/api/secret?sid=${encodeURIComponent(sessionId)}&adminEmail=${encodeURIComponent(currentUser.email)}`);
-        const data = await resp.json();
-
-        if (data.error) {
-            showMessage(data.error);
-            return;
-        }
-
-        const secretValue = document.getElementById('secretWordValue');
-        if (secretValue) {
-            secretValue.textContent = `Secret word: ${data.secret.toUpperCase()}`;
-        }
-    } catch (error) {
-        console.error('Failed to reveal secret word:', error);
-        showMessage('Unable to fetch the secret word');
-    }
-}
-
-async function addFirebaseUser() {
-    if (!isAdmin()) {
-        showMessage('Administrator access required');
-        return;
-    }
-
-    const emailInput = document.getElementById('adminUserEmail');
-    const passwordInput = document.getElementById('adminUserPassword');
-    const email = emailInput?.value.trim();
-    const password = passwordInput?.value || '';
-    if (!email || !emailInput.checkValidity()) return showMessage('Enter a valid user email');
-    if (password.length < 6) return showMessage('Password must be at least 6 characters');
-
-    try {
-        await createUserWithEmailAndPassword(getAdminCreatorAuth(), email, password);
-        await signOut(getAdminCreatorAuth());
-        emailInput.value = '';
-        passwordInput.value = '';
-        showMessage(`User ${email} created successfully`);
-    } catch (error) {
-        console.error('Admin user creation failed:', error);
-        showMessage(error.code === 'auth/email-already-in-use' ? 'User already exists' : 'Unable to create user');
-    }
-}
-
-function createAdminPanel(openPanel = false) {
-    let panel = document.getElementById('adminPanel');
-
-    if (!panel) {
-        panel = document.createElement('div');
-        panel.className = 'admin-panel';
-        panel.id = 'adminPanel';
-
-        panel.innerHTML = `
-            <div class="admin-panel-header">
-                <h3>Admin Panel</h3>
-                <button id="closeAdminPanelBtn" type="button" aria-label="Close admin panel">Close</button>
-            </div>
-
-            <section class="admin-section">
-                <p class="admin-section-title">GAME CONTROLS</p>
-                <button id="revealSecretBtn" type="button">Reveal Secret Word</button>
-                <p id="secretWordValue">Secret word: --</p>
-            </section>
-            <section class="admin-section">
-                <p class="admin-section-title">USER MANAGEMENT</p>
-                <label for="adminUserEmail">Email</label>
-                <input id="adminUserEmail" type="email" placeholder="player@example.com" autocomplete="off">
-                <label for="adminUserPassword">Password</label>
-                <input id="adminUserPassword" type="password" minlength="6" placeholder="At least 6 characters" autocomplete="new-password">
-                <button id="addUserBtn" type="button">Add User</button>
-            </section>
-        `;
-
-        document.querySelector('.container').appendChild(panel);
-
-        // ===== CLOSE PANEL =====
-        document.getElementById('closeAdminPanelBtn').onclick = () => {
-            panel.classList.add('hidden');
-        };
-
-        // ===== SECRET REVEAL =====
-        document.getElementById('revealSecretBtn').onclick = () => {
-            revealSecretWord();
-        };
-
-        document.getElementById('addUserBtn').onclick = addFirebaseUser;
-
-    }
-
-    panel.classList.toggle('hidden', !openPanel);
-
-}
-
 // ================= INIT =================
 
 function init() {
@@ -740,36 +479,6 @@ function init() {
         keyboardListenerAttached = true;
     }
 
-    const header = document.querySelector('.header');
-    if (!header) return;
-
-    let headerActions = document.querySelector('.header-actions');
-    if (!headerActions) {
-        headerActions = document.createElement('div');
-        headerActions.className = 'header-actions';
-        header.appendChild(headerActions);
-    }
-
-    // ===== ADMIN BUTTON =====
-    if (isAdmin()) {
-        let adminBtn = document.getElementById('adminToggleBtn');
-
-        if (!adminBtn) {
-            adminBtn = document.createElement('button');
-            adminBtn.id = 'adminToggleBtn';
-            adminBtn.textContent = 'Admin Options';
-            headerActions.appendChild(adminBtn);
-
-            adminBtn.onclick = () => {
-                const panel = document.getElementById('adminPanel');
-                if (panel) {
-                    panel.classList.toggle('hidden');
-                } else {
-                    createAdminPanel(true);
-                }
-            };
-        }
-    }
 }
 
 // ================= START =================
