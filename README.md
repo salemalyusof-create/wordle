@@ -40,7 +40,7 @@ cd "c:\Users\admin\Desktop\private copy"; npx serve . -l 5500
 - `index.html`: Ana HTML dosyası
 - `script.js`: Oyun mantığı ve JavaScript kodu
 - `styles.css`: CSS stilleri
-- `backend.c++`: (İsteğe bağlı) C++ backend kodu
+- `backend.js`: Node.js backend kodu
 - `expandedwordlist.txt`: Genişletilmiş kelime listesi
 - `README.md`: Bu dosya
 

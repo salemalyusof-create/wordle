@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "start": "node backend.js"
+  },
   "dependencies": {
     "firebase": "^12.19.0"
   }
