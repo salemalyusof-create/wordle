@@ -24,6 +24,8 @@ Bu proje, popüler Wordle kelime tahmin oyununun bir klonudur. Oyuncular 5 harfl
 1. **Dosyaları İndirin**: Tüm proje dosyalarını bir klasöre koyun
 2. **Tarayıcıda Açın**: Proje klasöründe `npx serve . -l 5500` çalıştırıp `http://localhost:5500` adresini açın. `file://` ile açmayın.
 3. **Oynamaya Başlayın**: Oyuncu hesabı gerekmez.
+
+GitHub Pages üzerinde yayınlanan kopya, kelime listelerini tarayıcıda kullanır ve backend çalıştırmadan oynanabilir.
 cd "c:\Users\admin\Desktop\private copy"; npx serve . -l 5500
 ## Dosya Yapısı
 

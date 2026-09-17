@@ -1,9 +1,12 @@
 // Wordle Game - Backend-driven version
 const API_URL = 'http://127.0.0.1:8080';
+let useBackend = ['localhost', '127.0.0.1'].includes(window.location.hostname);
 
 let selectedLanguage = 'english';
 let sessionId = null;
 let words = [];
+let secretWord = '';
+let localAttempts = 0;
 
 const keyboardLayouts = {
     english: [
@@ -22,6 +25,7 @@ let gameOver = false;
 let currentRow = 0;
 let currentCol = 0;
 let appInitialized = false;
+let gameReady = null;
 let keyboardListenerAttached = false;
 let languageLocked = false;
 let toastTimer = null;
@@ -35,6 +39,32 @@ const keyboardStatusPriority = {
     present: 2,
     correct: 3
 };
+
+function evaluateGuess(guess, secret) {
+    const guessed = Array.from(normalizeGuess(guess));
+    const answer = Array.from(normalizeGuess(secret));
+    const result = Array(5).fill('absent');
+    const remaining = new Map();
+
+    for (let index = 0; index < 5; index += 1) {
+        if (guessed[index] === answer[index]) {
+            result[index] = 'correct';
+        } else {
+            remaining.set(answer[index], (remaining.get(answer[index]) || 0) + 1);
+        }
+    }
+
+    for (let index = 0; index < 5; index += 1) {
+        if (result[index] === 'correct') continue;
+        const count = remaining.get(guessed[index]) || 0;
+        if (count) {
+            result[index] = 'present';
+            remaining.set(guessed[index], count - 1);
+        }
+    }
+
+    return result;
+}
 
 // Handle language selection
 function handleLanguageSelect(language) {
@@ -118,8 +148,20 @@ async function useHint() {
         });
 
         const excluded = Array.from(excludedPositions).sort((a, b) => a - b).join(',');
-        const response = await fetch(`${API_URL}/api/hint?sid=${encodeURIComponent(sessionId)}&exclude=${encodeURIComponent(excluded)}`);
-        const data = await response.json();
+        let data;
+        if (useBackend) {
+            const response = await fetch(`${API_URL}/api/hint?sid=${encodeURIComponent(sessionId)}&exclude=${encodeURIComponent(excluded)}`);
+            data = await response.json();
+        } else {
+            const excludedSet = new Set(excluded ? excluded.split(',').map(Number) : []);
+            const candidates = [0, 1, 2, 3, 4].filter(position => !excludedSet.has(position) && !revealedHintPositions.has(position));
+            if (!candidates.length) {
+                data = { error: 'All letters are already revealed' };
+            } else {
+                const position = candidates[Math.floor(Math.random() * candidates.length)];
+                data = { position, letter: Array.from(secretWord)[position] };
+            }
+        }
         if (data.error) {
             showMessage(data.error);
             updateHintUI();
@@ -200,9 +242,16 @@ function recordGame(won) {
 
 async function loadWords() {
     try {
-        const resp = await fetch(`${API_URL}/api/words?lang=${selectedLanguage}`);
-        const data = await resp.json();
-        words = data.words || [];
+        const wordSource = useBackend
+            ? `${API_URL}/api/words?lang=${selectedLanguage}`
+            : `${selectedLanguage}wordlist.txt`;
+        const resp = await fetch(wordSource);
+        if (!useBackend) {
+            words = (await resp.text()).split(/\r?\n/).map(word => word.trim()).filter(word => Array.from(word).length === 5);
+        } else {
+            const data = await resp.json();
+            words = data.words || [];
+        }
         if (words.length === 0) {
             words = ["APPLE", "BERRY", "CRANE", "SLATE", "PLANT", "BRAVE"];
         }
@@ -214,12 +263,26 @@ async function loadWords() {
 
 async function initializeGame() {
     try {
-        const resp = await fetch(`${API_URL}/api/init?lang=${selectedLanguage}`);
-        const data = await resp.json();
-        sessionId = data.sessionId;
+        if (useBackend) {
+            const resp = await fetch(`${API_URL}/api/init?lang=${selectedLanguage}`);
+            const data = await resp.json();
+            sessionId = data.sessionId;
+        } else {
+            sessionId = `local_${Date.now()}`;
+        }
         await loadWords();
+        if (!useBackend) secretWord = words[Math.floor(Math.random() * words.length)];
     } catch(e) {
         console.error('Failed to initialize game:', e);
+        if (useBackend) {
+            useBackend = false;
+            await loadWords();
+        }
+        if (!useBackend) {
+            if (!words.length) words = ["apple", "berry", "crane", "slate", "plant", "brave"];
+            secretWord = words[Math.floor(Math.random() * words.length)];
+            sessionId = `local_${Date.now()}`;
+        }
     }
 }
 
@@ -232,27 +295,39 @@ function normalizeGuess(value) {
 }
 
 async function submitGuess() {
+    if (gameReady) await gameReady;
+
     const tiles = document.querySelectorAll(`.row:nth-child(${currentRow + 1}) .tile`);
     const guess = normalizeGuess(Array.from(tiles).map(t => t.textContent).join(''));
 
     if (guess.length !== 5) return showMessage('Must be 5 letters');
     
-    // Validate word against backend
+    // Validate against the backend locally, or against the bundled list on hosted copies.
     try {
-        const encodedGuess = encodeURIComponent(guess);
-        const validResp = await fetch(`${API_URL}/api/validate?lang=${selectedLanguage}&word=${encodedGuess}`);
-        const validData = await validResp.json();
-        if (!validData.valid) return showMessage('Word not in list');
+        if (useBackend) {
+            const encodedGuess = encodeURIComponent(guess);
+            const validResp = await fetch(`${API_URL}/api/validate?lang=${selectedLanguage}&word=${encodedGuess}`);
+            const validData = await validResp.json();
+            if (!validData.valid) return showMessage('Word not in list');
+        } else if (!words.some(word => normalizeGuess(word) === guess)) {
+            return showMessage('Word not in list');
+        }
     } catch(e) {
         console.error('Validation error:', e);
         return showMessage('Validation failed');
     }
 
-    // Submit guess to backend
     try {
-        const encodedGuess = encodeURIComponent(guess);
-        const resp = await fetch(`${API_URL}/api/guess?sid=${sessionId}&guess=${encodedGuess}`);
-        const data = await resp.json();
+        let data;
+        if (useBackend) {
+            const encodedGuess = encodeURIComponent(guess);
+            const resp = await fetch(`${API_URL}/api/guess?sid=${sessionId}&guess=${encodedGuess}`);
+            data = await resp.json();
+        } else {
+            localAttempts += 1;
+            const result = evaluateGuess(guess, secretWord);
+            data = { result, won: result.every(state => state === 'correct'), attempts: localAttempts };
+        }
 
         if (data.error) {
             showMessage(data.error);
@@ -379,12 +454,13 @@ function resetGame() {
     gameOver = false;
     currentRow = 0;
     currentCol = 0;
+    localAttempts = 0;
     languageLocked = false;
     hintsUsed = 0;
     revealedHintPositions.clear();
     revealedHintLetters.clear();
     keyboardLetterStatuses.clear();
-    initializeGame();
+    gameReady = initializeGame();
     updateKeyboardLayout();
     updateGameMeta();
 
@@ -466,7 +542,7 @@ function init() {
     }
 
     appInitialized = true;
-    initializeGame();
+    gameReady = initializeGame();
     updateKeyboardLayout();
     updateGameMeta();
     updateHintUI();
