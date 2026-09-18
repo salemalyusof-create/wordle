@@ -33,7 +33,13 @@ let hintsUsed = 0;
 const revealedHintPositions = new Set();
 const revealedHintLetters = new Map();
 const maxAttempts = 6;
+const hintRowIndex = maxAttempts - 1;
+const typedLettersByRow = new Map();
 const keyboardLetterStatuses = new Map();
+let inputLocked = false;
+let gameVersion = 0;
+let invalidClearTimer = null;
+let hintRequestPending = false;
 const keyboardStatusPriority = {
     absent: 1,
     present: 2,
@@ -123,29 +129,98 @@ function updateHintUI() {
     const remaining = Math.max(0, 2 - hintsUsed);
     if (count) count.textContent = `${remaining} left`;
     if (button) {
-        button.disabled = remaining === 0 || gameOver;
+        button.disabled = remaining === 0 || gameOver || hintRequestPending;
         button.setAttribute('aria-label', `Use hint, ${remaining} remaining`);
     }
 }
 
-async function useHint() {
-    if (gameOver || hintsUsed >= 2 || !sessionId) return;
+function getRowTiles(rowIndex) {
+    return Array.from(document.querySelectorAll(`.row:nth-child(${rowIndex + 1}) .tile`));
+}
 
-    const button = document.getElementById('hintButton');
-    if (button) button.disabled = true;
+function displayLetter(letter) {
+    return selectedLanguage === 'turkish'
+        ? letter.toLocaleUpperCase('tr-TR')
+        : letter.toUpperCase();
+}
+
+function getTypedLetters(rowIndex) {
+    if (!typedLettersByRow.has(rowIndex)) {
+        typedLettersByRow.set(rowIndex, new Map());
+    }
+    return typedLettersByRow.get(rowIndex);
+}
+
+function isHintPosition(rowIndex, position) {
+    return rowIndex === hintRowIndex && revealedHintPositions.has(position);
+}
+
+function getNextEditablePosition(rowIndex, start = 0) {
+    const typedLetters = getTypedLetters(rowIndex);
+    for (let position = start; position < 5; position += 1) {
+        if (!isHintPosition(rowIndex, position) && !typedLetters.has(position)) return position;
+    }
+    return 5;
+}
+
+function isRowComplete(rowIndex) {
+    const typedLetters = getTypedLetters(rowIndex);
+    return Array.from({ length: 5 }, (_, position) =>
+        isHintPosition(rowIndex, position) || typedLetters.has(position)
+    ).every(Boolean);
+}
+
+function buildGuess(rowIndex) {
+    const typedLetters = getTypedLetters(rowIndex);
+    return normalizeGuess(Array.from({ length: 5 }, (_, position) =>
+        isHintPosition(rowIndex, position)
+            ? revealedHintLetters.get(position)
+            : typedLetters.get(position)
+    ).join(''));
+}
+
+function renderPersistentHints(animatePosition = null) {
+    const tiles = getRowTiles(hintRowIndex);
+    const typedLetters = getTypedLetters(hintRowIndex);
+
+    revealedHintPositions.forEach(position => {
+        const tile = tiles[position];
+        const letter = revealedHintLetters.get(position);
+        if (!tile || !letter) return;
+
+        // A newly revealed hint is authoritative on the final row.
+        typedLetters.delete(position);
+        tile.textContent = displayLetter(letter);
+        tile.dataset.state = 'hint';
+        tile.classList.remove('invalid');
+        if (position === animatePosition) {
+            tile.classList.remove('hint-reveal');
+            void tile.offsetWidth;
+            tile.classList.add('hint-reveal');
+        }
+    });
+}
+
+async function useHint() {
+    if (gameOver || inputLocked || hintRequestPending || hintsUsed >= 2) return;
+
+    const requestVersion = gameVersion;
+    hintRequestPending = true;
+    updateHintUI();
 
     try {
+        if (gameReady) await gameReady;
+        if (requestVersion !== gameVersion || !sessionId) return;
+
         const excludedPositions = new Set();
-        document.querySelectorAll('.row').forEach(row => {
+        document.querySelectorAll('.row').forEach((row, rowIndex) => {
+            if (rowIndex === hintRowIndex) return;
             Array.from(row.querySelectorAll('.tile')).forEach((tile, position) => {
                 if (tile.dataset.state === 'correct') excludedPositions.add(position);
             });
         });
 
-        const currentTiles = document.querySelectorAll(`.row:nth-child(${currentRow + 1}) .tile`);
-        Array.from(currentTiles).forEach((tile, position) => {
-            if (tile.textContent) excludedPositions.add(position);
-        });
+        revealedHintPositions.forEach(position => excludedPositions.add(position));
 
         const excluded = Array.from(excludedPositions).sort((a, b) => a - b).join(',');
         let data;
@@ -162,6 +237,7 @@ async function useHint() {
                 data = { position, letter: Array.from(secretWord)[position] };
             }
         }
+        if (requestVersion !== gameVersion) return;
         if (data.error) {
             showMessage(data.error);
             updateHintUI();
@@ -171,37 +247,19 @@ async function useHint() {
         hintsUsed += 1;
         revealedHintPositions.add(data.position);
         revealedHintLetters.set(data.position, data.letter);
-        const rowTiles = document.querySelectorAll(`.row:nth-child(${currentRow + 1}) .tile`);
-        const tile = rowTiles[data.position];
-        if (tile) {
-            tile.textContent = selectedLanguage === 'turkish'
-                ? data.letter.toLocaleUpperCase('tr-TR')
-                : data.letter.toUpperCase();
-            tile.dataset.state = 'hint';
-            tile.classList.remove('hint-reveal');
-            void tile.offsetWidth;
-            tile.classList.add('hint-reveal');
-        }
-        updateHintUI();
-        showMessage(`Hint revealed: ${data.letter.toUpperCase()}`);
+        renderPersistentHints(data.position);
+        if (currentRow === hintRowIndex) currentCol = getNextEditablePosition(currentRow, 0);
+        showMessage(`Hint revealed: ${displayLetter(data.letter)}`);
     } catch (error) {
+        if (requestVersion !== gameVersion) return;
         console.error('Hint request failed:', error);
         showMessage('Unable to load a hint');
-        updateHintUI();
+    } finally {
+        if (requestVersion === gameVersion) {
+            hintRequestPending = false;
+            updateHintUI();
+        }
     }
-}
-
-function applyHintsToCurrentRow() {
-    const tiles = document.querySelectorAll(`.row:nth-child(${currentRow + 1}) .tile`);
-    revealedHintPositions.forEach(position => {
-        const tile = tiles[position];
-        if (!tile || tile.textContent) return;
-        const letter = revealedHintLetters.get(position);
-        tile.textContent = selectedLanguage === 'turkish'
-            ? letter.toLocaleUpperCase('tr-TR')
-            : letter.toUpperCase();
-        tile.dataset.state = 'hint';
-    });
 }
 
 function getStatsKey() {
@@ -295,25 +353,32 @@ function normalizeGuess(value) {
 }
 
 async function submitGuess() {
+    if (inputLocked || gameOver) return;
+    const submittedRow = currentRow;
+    const submittedVersion = gameVersion;
+    if (!isRowComplete(submittedRow)) return showMessage('Must be 5 letters');
+
+    inputLocked = true;
     if (gameReady) await gameReady;
+    if (submittedVersion !== gameVersion || submittedRow !== currentRow || gameOver) return;
 
-    const tiles = document.querySelectorAll(`.row:nth-child(${currentRow + 1}) .tile`);
-    const guess = normalizeGuess(Array.from(tiles).map(t => t.textContent).join(''));
+    const guess = buildGuess(submittedRow);
 
-    if (guess.length !== 5) return showMessage('Must be 5 letters');
-    
     // Validate against the backend locally, or against the bundled list on hosted copies.
     try {
         if (useBackend) {
             const encodedGuess = encodeURIComponent(guess);
             const validResp = await fetch(`${API_URL}/api/validate?lang=${selectedLanguage}&word=${encodedGuess}`);
             const validData = await validResp.json();
-            if (!validData.valid) return showMessage('Word not in list');
+            if (submittedVersion !== gameVersion) return;
+            if (!validData.valid) return rejectInvalidWord(submittedRow, submittedVersion);
         } else if (!words.some(word => normalizeGuess(word) === guess)) {
-            return showMessage('Word not in list');
+            return rejectInvalidWord(submittedRow, submittedVersion);
         }
     } catch(e) {
+        if (submittedVersion !== gameVersion) return;
         console.error('Validation error:', e);
+        inputLocked = false;
         return showMessage('Validation failed');
     }
 
@@ -328,9 +393,11 @@ async function submitGuess() {
             const result = evaluateGuess(guess, secretWord);
             data = { result, won: result.every(state => state === 'correct'), attempts: localAttempts };
         }
+        if (submittedVersion !== gameVersion || submittedRow !== currentRow) return;
 
         if (data.error) {
             showMessage(data.error);
+            inputLocked = false;
             return;
         }
 
@@ -338,7 +405,7 @@ async function submitGuess() {
         languageLocked = true;
         const result = data.result;
 
-        updateBoard(guess, result, currentRow);
+        updateBoard(guess, result, submittedRow);
         updateKeyboard(guess, result);
         updateGameMeta();
         updateLanguageButtonUI();
@@ -362,14 +429,50 @@ async function submitGuess() {
             updateLanguageButtonUI();
         } else {
             currentRow++;
-            currentCol = 0;
-            revealedHintPositions.clear();
-            revealedHintLetters.clear();
+            currentCol = getNextEditablePosition(currentRow);
+            renderPersistentHints();
+            inputLocked = false;
         }
     } catch(e) {
+        if (submittedVersion !== gameVersion) return;
         console.error('Guess submission error:', e);
         showMessage('Network error');
+        inputLocked = false;
     }
+}
+
+function rejectInvalidWord(rowIndex, version) {
+    if (version !== gameVersion) return;
+
+    const row = document.querySelector(`.row:nth-child(${rowIndex + 1})`);
+    const typedLetters = getTypedLetters(rowIndex);
+    const tiles = getRowTiles(rowIndex);
+
+    showMessage('Word not in list');
+    if (row) {
+        row.classList.remove('shake', 'invalid-word');
+        void row.offsetWidth;
+        row.classList.add('invalid-word');
+    }
+    typedLetters.forEach((_, position) => tiles[position]?.classList.add('invalid'));
+
+    clearTimeout(invalidClearTimer);
+    invalidClearTimer = setTimeout(() => {
+        if (version !== gameVersion || currentRow !== rowIndex) return;
+
+        typedLetters.clear();
+        tiles.forEach((tile, position) => {
+            tile.classList.remove('invalid', 'pop');
+            if (isHintPosition(rowIndex, position)) return;
+            tile.textContent = '';
+            tile.dataset.state = 'empty';
+        });
+        row?.classList.remove('invalid-word');
+        renderPersistentHints();
+        currentCol = getNextEditablePosition(rowIndex);
+        inputLocked = false;
+        invalidClearTimer = null;
+    }, 1850);
 }
 
 // ================= UI =================
@@ -382,7 +485,7 @@ function updateBoard(guess, result, rowIndex) {
             ? guess[i].toLocaleUpperCase('tr-TR')
             : guess[i].toUpperCase();
         tile.dataset.state = result[i];
-        tile.classList.remove('flip', 'correct', 'present', 'absent');
+        tile.classList.remove('flip', 'correct', 'present', 'absent', 'hint-reveal', 'invalid', 'pop');
 
         setTimeout(() => {
             tile.classList.add('flip', result[i]);
@@ -450,15 +553,21 @@ function showPopup(message, won = false) {
 }
 
 function resetGame() {
+    gameVersion += 1;
+    clearTimeout(invalidClearTimer);
+    invalidClearTimer = null;
     guesses = [];
     gameOver = false;
     currentRow = 0;
     currentCol = 0;
+    inputLocked = false;
+    hintRequestPending = false;
     localAttempts = 0;
     languageLocked = false;
     hintsUsed = 0;
     revealedHintPositions.clear();
     revealedHintLetters.clear();
+    typedLettersByRow.clear();
     keyboardLetterStatuses.clear();
     gameReady = initializeGame();
     updateKeyboardLayout();
@@ -469,6 +578,7 @@ function resetGame() {
         t.className = 'tile';
         t.dataset.state = 'empty';
     });
+    document.querySelectorAll('.row').forEach(row => row.classList.remove('invalid-word', 'shake'));
 
     updateLanguageButtonUI();
     updateHintUI();
@@ -478,30 +588,33 @@ function resetGame() {
 // ================= INPUT =================
 
 function handleKeyPress(key) {
-    if (gameOver) return;
+    if (gameOver || inputLocked) return;
 
-    const tiles = document.querySelectorAll(`.row:nth-child(${currentRow + 1}) .tile`);
+    const tiles = getRowTiles(currentRow);
+    const typedLetters = getTypedLetters(currentRow);
 
     if (key === 'Enter') {
-        if (currentCol === 5) submitGuess();
+        if (isRowComplete(currentRow)) submitGuess();
     } else if (key === 'Backspace' || key === '⌫') {
-        while (currentCol > 0 && revealedHintPositions.has(currentCol - 1)) currentCol--;
-        if (currentCol > 0) {
-            currentCol--;
-            tiles[currentCol].textContent = '';
+        for (let position = Math.min(currentCol - 1, 4); position >= 0; position -= 1) {
+            if (!typedLetters.has(position)) continue;
+            typedLetters.delete(position);
+            tiles[position].textContent = '';
+            tiles[position].dataset.state = 'empty';
+            tiles[position].classList.remove('pop');
+            currentCol = position;
+            break;
         }
     } else if (/^[A-Za-zÇçĞğıİÖöŞşÜü]$/.test(key) && currentCol < 5) {
-        while (currentCol < 5 && revealedHintPositions.has(currentCol)) currentCol++;
-        if (currentCol >= 5) return;
-        const displayKey = selectedLanguage === 'turkish'
-            ? key.toLocaleUpperCase('tr-TR')
-            : key.toUpperCase();
-        tiles[currentCol].textContent = displayKey;
-        tiles[currentCol].dataset.state = 'filled';
-        tiles[currentCol].classList.remove('pop');
-        void tiles[currentCol].offsetWidth;
-        tiles[currentCol].classList.add('pop');
-        currentCol++;
+        const position = getNextEditablePosition(currentRow, currentCol);
+        if (position >= 5) return;
+        typedLetters.set(position, normalizeGuess(key));
+        tiles[position].textContent = displayLetter(key);
+        tiles[position].dataset.state = 'filled';
+        tiles[position].classList.remove('pop');
+        void tiles[position].offsetWidth;
+        tiles[position].classList.add('pop');
+        currentCol = getNextEditablePosition(currentRow, position + 1);
     }
 }
 

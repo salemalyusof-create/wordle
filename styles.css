@@ -83,6 +83,8 @@ button { font: inherit; }
 .tile.hint-reveal { animation: hint-reveal .6s cubic-bezier(.2,.8,.2,1) both; }
 .tile.flip { animation: tile-flip .48s ease both; }
 .tile.pop { animation: tile-pop .16s ease; }
+.row.invalid-word { animation: invalid-row .38s ease, invalid-row-glow 1.8s ease both; }
+.row.invalid-word .tile.invalid { animation: invalid-tile 1.8s cubic-bezier(.2,.75,.25,1) both; background: rgba(177, 48, 57, .13); border-color: rgba(255, 109, 119, .95); box-shadow: 0 0 0 2px rgba(255, 94, 105, .15), 0 0 22px rgba(230, 62, 74, .35), inset 0 1px 0 rgba(255,255,255,.06); }
 .board-hint { color: var(--muted); font-size: 11px; margin: 17px 0 0; }
 .hint-key { border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 9px; font-weight: 800; letter-spacing: .08em; margin: 0 4px; padding: 3px 5px; }
 .side-rail { display: grid; gap: 14px; }
@@ -161,6 +163,9 @@ button { font: inherit; }
 @keyframes tile-pop { 50% { transform: scale(1.12); } }
 @keyframes hint-reveal { 0% { opacity: .35; transform: rotateY(90deg) scale(.92); } 55% { box-shadow: 0 0 0 5px rgba(230, 184, 92, .16), 0 0 30px rgba(230, 184, 92, .3); transform: rotateY(-8deg) scale(1.08); } 100% { opacity: 1; transform: rotateY(0) scale(1); } }
 @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+@keyframes invalid-row { 0%, 100% { transform: translateX(0); } 18% { transform: translateX(-5px); } 38% { transform: translateX(4px); } 58% { transform: translateX(-3px); } 78% { transform: translateX(2px); } }
+@keyframes invalid-row-glow { 0%, 22% { filter: drop-shadow(0 0 0 rgba(231, 70, 80, 0)); } 42% { filter: drop-shadow(0 0 9px rgba(231, 70, 80, .23)); } 68% { filter: drop-shadow(0 0 5px rgba(231, 70, 80, .14)); } 100% { filter: drop-shadow(0 0 0 rgba(231, 70, 80, 0)); } }
+@keyframes invalid-tile { 0% { opacity: 1; transform: scale(1); } 18% { transform: scale(1.035); } 48% { transform: scale(1); } 66% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(.9); } }
 .row.shake { animation: shake .35s ease; }
 @media (max-width: 780px) {
     body { padding: 20px 14px 30px; }
