@@ -67,8 +67,9 @@ button { font: inherit; }
 .main.hidden { display: none !important; }
 .game-meta { align-items: end; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
 .round-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.give-up-button { background: rgba(255, 155, 155, .04); border: 1px solid rgba(255, 155, 155, .24); border-radius: 11px; color: #d5a6a6; cursor: pointer; font-size: 11px; font-weight: 800; letter-spacing: .08em; min-height: 44px; padding: 12px 14px; transition: .2s ease; }
+.give-up-button { background: rgba(255, 155, 155, .04); border: 1px solid rgba(255, 155, 155, .24); border-radius: 11px; color: #d5a6a6; cursor: pointer; font-size: 11px; font-weight: 800; letter-spacing: .08em; min-height: 44px; padding: 12px 14px; transition: background .18s ease, border-color .18s ease, color .18s ease, transform .18s ease; white-space: nowrap; }
 .give-up-button:hover:not(:disabled) { background: rgba(255, 155, 155, .1); border-color: rgba(255, 155, 155, .45); transform: translateY(-1px); }
+.give-up-button.confirming { animation: give-up-confirm .16s ease; background: rgba(255, 155, 155, .12); border-color: rgba(255, 155, 155, .52); color: #f0c2c2; font-size: 9px; letter-spacing: .04em; }
 .give-up-button:disabled { cursor: not-allowed; opacity: .45; }
 .give-up-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .game-meta h2 { font-family: Georgia, serif; font-size: clamp(20px, 3vw, 27px); font-weight: 400; margin: 0; }
@@ -183,6 +184,7 @@ button { font: inherit; }
 @keyframes invalid-row { 0%, 100% { transform: translateX(0); } 18% { transform: translateX(-5px); } 38% { transform: translateX(4px); } 58% { transform: translateX(-3px); } 78% { transform: translateX(2px); } }
 @keyframes invalid-row-glow { 0%, 22% { filter: drop-shadow(0 0 0 rgba(231, 70, 80, 0)); } 42% { filter: drop-shadow(0 0 9px rgba(231, 70, 80, .23)); } 68% { filter: drop-shadow(0 0 5px rgba(231, 70, 80, .14)); } 100% { filter: drop-shadow(0 0 0 rgba(231, 70, 80, 0)); } }
 @keyframes invalid-tile { 0% { opacity: 1; transform: scale(1); } 18% { transform: scale(1.035); } 48% { transform: scale(1); } 66% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(.9); } }
+@keyframes give-up-confirm { 0% { opacity: .55; transform: scale(.97); } 100% { opacity: 1; transform: scale(1); } }
 .row.shake { animation: shake .35s ease; }
 @media (max-width: 780px) {
     body { padding: 20px 14px 30px; }
@@ -227,6 +229,7 @@ button { font: inherit; }
     .game-meta { align-items: stretch; display: grid; grid-template-columns: 1fr auto; }
     .round-actions { grid-column: 1 / -1; margin-top: 2px; }
     .round-actions > button { flex: 1; justify-content: center; min-height: 44px; }
+    .give-up-button.confirming { font-size: clamp(7px, 2.2vw, 9px); padding-inline: 8px; }
 }
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }

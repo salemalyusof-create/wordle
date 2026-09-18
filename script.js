@@ -35,7 +35,9 @@ const translations = {
         attempts: 'ATTEMPTS',
         hint: 'HINT',
         giveUp: 'GIVE UP',
-        giveUpConfirm: 'Are you sure you want to give up? The secret word will be revealed.',
+        confirmGiveUp: 'CLICK AGAIN TO GIVE UP',
+        giveUpAria: 'Give up',
+        confirmGiveUpAria: 'Click again to give up',
         gaveUpMessage: 'You gave up.',
         theWordWas: 'The word was:',
         giveUpFailed: 'Unable to end the round. Please try again.',
@@ -98,7 +100,9 @@ const translations = {
         attempts: 'DENEMELER',
         hint: 'İPUCU',
         giveUp: 'PES ET',
-        giveUpConfirm: 'Pes etmek istediğinizden emin misiniz? Gizli kelime gösterilecek.',
+        confirmGiveUp: 'PES ETMEK İÇİN TEKRAR TIKLA',
+        giveUpAria: 'Pes et',
+        confirmGiveUpAria: 'Pes etmek için tekrar tıkla',
         gaveUpMessage: 'Pes ettin.',
         theWordWas: 'Kelime:',
         giveUpFailed: 'Tur sonlandırılamadı. Lütfen tekrar deneyin.',
@@ -393,7 +397,10 @@ let gameVersion = 0;
 let invalidClearTimer = null;
 let hintRequestPending = false;
 let giveUpPending = false;
+let giveUpConfirmationActive = false;
+let giveUpConfirmTimer = null;
 let roundReady = false;
+const giveUpConfirmTimeout = 3000;
 const keyboardStatusPriority = {
     absent: 1,
     present: 2,
@@ -431,6 +438,8 @@ function handleLanguageSelect(language) {
     if (!supportedLanguages.has(language) || language === selectedLanguage) {
         return;
     }
+
+    resetGiveUpConfirmation();
 
     const isActiveRound = guesses.length > 0 && !gameOver;
     if (isActiveRound) {
@@ -525,14 +534,42 @@ function updateHintUI() {
 
 function updateGiveUpUI() {
     const button = document.getElementById('giveUpButton');
-    if (button) button.disabled = gameOver || giveUpPending || !roundReady;
+    if (!button) return;
+    const labelKey = giveUpConfirmationActive ? 'confirmGiveUp' : 'giveUp';
+    const accessibleLabelKey = giveUpConfirmationActive ? 'confirmGiveUpAria' : 'giveUpAria';
+    button.textContent = t(labelKey);
+    button.setAttribute('aria-label', t(accessibleLabelKey));
+    button.title = t(accessibleLabelKey);
+    button.classList.toggle('confirming', giveUpConfirmationActive);
+    button.disabled = gameOver || giveUpPending || !roundReady;
+}
+
+function resetGiveUpConfirmation() {
+    clearTimeout(giveUpConfirmTimer);
+    giveUpConfirmTimer = null;
+    giveUpConfirmationActive = false;
+    updateGiveUpUI();
+}
+
+function handleGiveUpClick() {
+    if (gameOver || giveUpPending || !roundReady) return;
+    if (inputLocked || hintRequestPending) return showMessage(t('roundBusy'));
+
+    if (!giveUpConfirmationActive) {
+        giveUpConfirmationActive = true;
+        updateGiveUpUI();
+        giveUpConfirmTimer = setTimeout(resetGiveUpConfirmation, giveUpConfirmTimeout);
+        return;
+    }
+
+    resetGiveUpConfirmation();
+    giveUpGame();
 }
 
 async function giveUpGame() {
     if (gameOver || giveUpPending || !roundReady) return;
     // Serialize surrender with guesses/hints; never race a server mutation.
     if (inputLocked || hintRequestPending) return showMessage(t('roundBusy'));
-    if (!window.confirm(t('giveUpConfirm'))) return;
     const version = gameVersion;
     giveUpPending = true;
     inputLocked = true;
@@ -640,6 +677,7 @@ function renderPersistentHints(animatePosition = null) {
 async function useHint() {
     if (gameOver || inputLocked || hintRequestPending || hintsUsed >= 2) return;
 
+    resetGiveUpConfirmation();
     const requestVersion = gameVersion;
     hintRequestPending = true;
     updateHintUI();
@@ -814,6 +852,7 @@ async function submitGuess() {
     const submittedVersion = gameVersion;
     if (!isRowComplete(submittedRow)) return showMessage(t('mustBeFiveLetters'));
 
+    resetGiveUpConfirmation();
     inputLocked = true;
     soundManager.play('submit');
     const soundGeneration = soundManager.generation;
@@ -869,6 +908,7 @@ async function submitGuess() {
         updateLanguageButtonUI();
 
         if (result.every(r => r === 'correct')) {
+            resetGiveUpConfirmation();
             gameOver = true;
             languageLocked = false;
             recordGame(true);
@@ -884,6 +924,7 @@ async function submitGuess() {
         }
 
         if (data.attempts >= maxAttempts) {
+            resetGiveUpConfirmation();
             gameOver = true;
             languageLocked = false;
             recordGame(false);
@@ -1035,6 +1076,7 @@ function showPopup({ outcome, attempts, word }) {
 
 function resetGame() {
     gameVersion += 1;
+    resetGiveUpConfirmation();
     clearTimeout(toastTimer);
     document.getElementById('toast')?.classList.remove('visible');
     soundManager.stop();
@@ -1086,6 +1128,7 @@ function handleKeyPress(key) {
     } else if (key === 'Backspace' || key === '⌫') {
         for (let position = Math.min(currentCol - 1, 4); position >= 0; position -= 1) {
             if (!typedLetters.has(position)) continue;
+            resetGiveUpConfirmation();
             typedLetters.delete(position);
             tiles[position].textContent = '';
             tiles[position].dataset.state = 'empty';
@@ -1097,6 +1140,7 @@ function handleKeyPress(key) {
     } else if (/^[A-Za-zÇçĞğıİÖöŞşÜü]$/.test(key) && currentCol < 5) {
         const position = getNextEditablePosition(currentRow, currentCol);
         if (position >= 5) return;
+        resetGiveUpConfirmation();
         typedLetters.set(position, normalizeGuess(key));
         tiles[position].textContent = displayLetter(key);
         tiles[position].dataset.state = 'filled';
@@ -1184,7 +1228,7 @@ function init() {
 // ================= START =================
 
 document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('giveUpButton')?.addEventListener('click', giveUpGame);
+    document.getElementById('giveUpButton')?.addEventListener('click', handleGiveUpClick);
     document.getElementById('soundToggle')?.addEventListener('click', event => soundManager.toggle(event));
     const hintButton = document.getElementById('hintButton');
     if (hintButton) {
