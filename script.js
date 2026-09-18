@@ -162,6 +162,9 @@ function translateServerError(error) {
 // Shared, softly filtered tonal palette. Notes: frequency, end frequency,
 // duration, relative gain, delay, waveform (optional).
 const SOUND_VOLUME = 0.12;
+// Give mobile audio hardware time to wake up, but never replay a seconds-old
+// backlog after a blocked resume. Running contexts have no playback deadline.
+const SOUND_RESUME_GRACE_MS = 2000;
 const soundEffects = {
     key: [[680, 420, 0.045, 0.28, 0, 'triangle']],
     backspace: [[360, 190, 0.07, 0.32, 0, 'triangle']],
@@ -181,37 +184,101 @@ const soundManager = {
     context: null,
     output: null,
     resuming: null,
+    cancelResume: null,
+    needsGesture: true,
     generation: 0,
     voices: new Set(),
 
     // Called only by trusted user gestures, never by initialization or timers.
     unlock(event) {
-        if (!event.isTrusted || !this.enabled) return;
+        if (!event?.isTrusted || !this.enabled || document.hidden) return;
         try {
-            if (!this.context) {
+            if (!this.context || this.context.state === 'closed') {
+                this.stop();
+                this.cancelResume?.();
+                this.output?.disconnect();
+                this.context = null;
+                this.output = null;
                 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
                 if (!AudioContextClass) return;
                 this.context = new AudioContextClass();
+                this.needsGesture = true;
+            }
+            if (!this.output) {
                 this.output = this.context.createGain();
                 this.output.gain.value = SOUND_VOLUME;
                 this.output.connect(this.context.destination);
             }
-            if (this.context.state !== 'running' && !this.resuming) {
-                this.resuming = this.context.resume().catch(() => {}).finally(() => {
-                    this.resuming = null;
-                });
+            // A touch's down/start event is not an activation event in every
+            // browser. Wait for touchend/click rather than leave resume pending
+            // from a disallowed event and block the subsequent valid gesture.
+            if (event.type === 'touchstart'
+                || (event.type === 'pointerdown' && event.pointerType !== 'mouse')) return;
+            if (this.resuming) return;
+            if (this.needsGesture || this.context.state !== 'running') {
+                // A zero-filled buffer starts inside the gesture for WebKit.
+                // It is connected to our graph, but cannot produce an audible tone.
+                const activation = this.context.createBufferSource();
+                activation.buffer = this.context.createBuffer(1, 1, this.context.sampleRate);
+                activation.connect(this.output);
+                activation.onended = () => activation.disconnect();
+                activation.start(0);
             }
+            this.needsGesture = false;
+            this.prepareAudio();
         } catch {
             // Audio is optional; a denied/unavailable device must not interrupt play.
         }
     },
 
+    prepareAudio() {
+        const context = this.context;
+        if (!this.enabled || this.needsGesture || document.hidden || !context
+            || !this.output || context.state === 'closed') return Promise.resolve(false);
+        if (context.state === 'running') return Promise.resolve(true);
+        if (this.resuming) return this.resuming;
+
+        // Share one resume across concurrent requests, including Safari's
+        // "interrupted" state. A blocked promise must not prevent future retries.
+        let finish;
+        const pending = new Promise(resolve => { finish = resolve; });
+        this.resuming = pending;
+        const timer = setTimeout(() => settle(false), SOUND_RESUME_GRACE_MS);
+        const settle = ready => {
+            clearTimeout(timer);
+            if (this.resuming === pending) {
+                this.resuming = null;
+                this.cancelResume = null;
+            }
+            finish(ready);
+        };
+        this.cancelResume = () => settle(false);
+        try {
+            // Invoke synchronously so gesture activation is still available.
+            Promise.resolve(context.resume()).then(
+                () => settle(context === this.context && context.state === 'running'),
+                () => settle(false)
+            );
+        } catch { settle(false); }
+        return pending;
+    },
+
+    pauseForLifecycle() {
+        this.needsGesture = true;
+        this.stop();
+        this.cancelResume?.();
+        // Do not resume on visibility/pageshow: the next gesture does that.
+    },
+
     play(type, generation = this.generation) {
-        if (!this.enabled || !this.context || !this.output || !soundEffects[type]) return;
-        const requestedAt = performance.now();
+        if (!this.enabled || this.needsGesture || document.hidden
+            || !this.context || !this.output || !soundEffects[type]) return;
+        const context = this.context;
+        const requestedAt = Date.now();
         const schedule = () => {
-            if (!this.enabled || generation !== this.generation || this.context.state !== 'running'
-                || performance.now() - requestedAt > 200) return;
+            if (!this.enabled || this.needsGesture || document.hidden
+                || generation !== this.generation || context !== this.context
+                || context.state !== 'running') return;
             try {
                 const start = this.context.currentTime + 0.005;
                 for (const [frequency, endFrequency, duration, volume, delay, waveform = 'sine'] of soundEffects[type]) {
@@ -247,8 +314,10 @@ const soundManager = {
                 this.stop();
             }
         };
-        if (this.resuming) this.resuming.then(schedule).catch(() => {});
-        else schedule();
+        if (context.state === 'running') schedule();
+        else this.prepareAudio().then(ready => {
+            if (ready && Date.now() - requestedAt <= SOUND_RESUME_GRACE_MS) schedule();
+        }).catch(() => {});
     },
 
     stop() {
@@ -985,7 +1054,18 @@ function init() {
     renderStats();
 
     if (!keyboardListenerAttached) {
-        document.addEventListener('pointerdown', event => soundManager.unlock(event), { capture: true, passive: true });
+        for (const type of ['pointerdown', 'touchstart', 'touchend', 'click']) {
+            // These listeners ONLY unlock audio. Input remains in the existing
+            // click handler, so a touch/pointer/click sequence still types once.
+            document.addEventListener(type, event => soundManager.unlock(event), { capture: true, passive: true });
+        }
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) soundManager.pauseForLifecycle();
+        });
+        window.addEventListener('pagehide', () => soundManager.pauseForLifecycle());
+        window.addEventListener('pageshow', event => {
+            if (event.persisted) soundManager.pauseForLifecycle();
+        });
         document.addEventListener('keydown', e => {
             soundManager.unlock(e);
             // Let focused controls activate natively; avoid Enter also submitting a guess.
