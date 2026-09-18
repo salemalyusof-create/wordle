@@ -55,6 +55,14 @@ button { font: inherit; }
 .lang-btn, #logoutBtn, #adminToggleBtn { background: transparent; border: 1px solid var(--border); border-radius: 9px; color: var(--muted); cursor: pointer; font-size: 11px; font-weight: 800; letter-spacing: .08em; padding: 9px 12px; transition: .2s ease; }
 .lang-btn:hover, #logoutBtn:hover, #adminToggleBtn:hover { border-color: var(--accent); color: var(--text); transform: translateY(-1px); }
 .lang-btn.active { background: rgba(125, 226, 194, .14); border-color: rgba(125, 226, 194, .45); color: var(--accent); }
+.sound-button { align-items: center; background: transparent; border: 1px solid var(--border); border-radius: 9px; color: var(--muted); cursor: pointer; display: inline-flex; flex-shrink: 0; justify-content: center; padding: 8px 10px; transition: color .2s ease, border-color .2s ease, transform .2s ease; }
+.sound-button:hover { border-color: var(--accent); color: var(--text); transform: translateY(-1px); }
+.sound-button:active { transform: scale(.95); }
+.sound-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.sound-button svg { display: block; }
+.sound-waves, .sound-muted { transition: opacity .15s ease; }
+.sound-muted, .sound-button[data-muted="true"] .sound-waves { opacity: 0; }
+.sound-button[data-muted="true"] .sound-muted { opacity: 1; }
 .main { animation: fade-up .5s ease both; display: flex; flex-direction: column; gap: 18px; margin: 0 auto; max-width: 1020px; }
 .main.hidden { display: none !important; }
 .game-meta { align-items: end; display: flex; justify-content: space-between; }
@@ -184,7 +192,7 @@ button { font: inherit; }
     .header { margin-bottom: 23px; }
     .header-tools { width: 100%; }
     .language-buttons { margin-left: auto; }
-    .header-actions { margin-left: auto; }
+    .header-actions { margin-left: 0; }
     .main { gap: 14px; }
     .game-meta { gap: 10px; }
     .board-panel { min-width: 0; padding: 14px 8px 12px; width: 100%; }

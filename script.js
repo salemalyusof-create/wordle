@@ -56,6 +56,8 @@ const translations = {
         onScreenKeyboard: 'On-screen keyboard',
         enterKey: 'Enter key',
         backspaceKey: 'Backspace key',
+        muteSound: 'Mute sound effects',
+        enableSound: 'Enable sound effects',
         mustBeFiveLetters: 'Must be 5 letters',
         wordNotInList: 'Word not in list',
         validationFailed: 'Validation failed',
@@ -111,6 +113,8 @@ const translations = {
         onScreenKeyboard: 'Ekran klavyesi',
         enterKey: 'Enter tuşu',
         backspaceKey: 'Backspace tuşu',
+        muteSound: 'Ses efektlerini kapat',
+        enableSound: 'Ses efektlerini aç',
         mustBeFiveLetters: '5 harf girmelisiniz',
         wordNotInList: 'Kelime listede yok',
         validationFailed: 'Doğrulama başarısız oldu',
@@ -152,6 +156,126 @@ const serverErrorTranslationKeys = {
 
 function translateServerError(error) {
     return t(serverErrorTranslationKeys[error] || 'unexpectedError');
+}
+
+// ================= SOUND =================
+// Shared, softly filtered tonal palette. Notes: frequency, end frequency,
+// duration, relative gain, delay, waveform (optional).
+const SOUND_VOLUME = 0.12;
+const soundEffects = {
+    key: [[680, 420, 0.045, 0.28, 0, 'triangle']],
+    backspace: [[360, 190, 0.07, 0.32, 0, 'triangle']],
+    submit: [[330, 440, 0.12, 0.3, 0], [660, 660, 0.1, 0.16, 0.055]],
+    reveal: [[520, 580, 0.18, 0.22, 0], [780, 780, 0.22, 0.12, 0.09]],
+    invalid: [[245, 185, 0.15, 0.32, 0, 'triangle'], [185, 145, 0.17, 0.24, 0.1]],
+    hint: [[880, 880, 0.18, 0.21, 0], [1320, 1320, 0.27, 0.14, 0.075]],
+    win: [[440, 440, 0.3, 0.27, 0], [550, 550, 0.3, 0.25, 0.1], [660, 660, 0.34, 0.22, 0.2], [880, 880, 0.42, 0.18, 0.3]],
+    lose: [[392, 370, 0.25, 0.25, 0], [330, 294, 0.35, 0.23, 0.16]]
+};
+
+const soundManager = {
+    enabled: (() => {
+        try { return localStorage.getItem('wordleSoundEnabled') !== 'false'; }
+        catch { return true; }
+    })(),
+    context: null,
+    output: null,
+    resuming: null,
+    generation: 0,
+    voices: new Set(),
+
+    // Called only by trusted user gestures, never by initialization or timers.
+    unlock(event) {
+        if (!event.isTrusted || !this.enabled) return;
+        try {
+            if (!this.context) {
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContextClass) return;
+                this.context = new AudioContextClass();
+                this.output = this.context.createGain();
+                this.output.gain.value = SOUND_VOLUME;
+                this.output.connect(this.context.destination);
+            }
+            if (this.context.state !== 'running' && !this.resuming) {
+                this.resuming = this.context.resume().catch(() => {}).finally(() => {
+                    this.resuming = null;
+                });
+            }
+        } catch {
+            // Audio is optional; a denied/unavailable device must not interrupt play.
+        }
+    },
+
+    play(type, generation = this.generation) {
+        if (!this.enabled || !this.context || !this.output || !soundEffects[type]) return;
+        const requestedAt = performance.now();
+        const schedule = () => {
+            if (!this.enabled || generation !== this.generation || this.context.state !== 'running'
+                || performance.now() - requestedAt > 200) return;
+            try {
+                const start = this.context.currentTime + 0.005;
+                for (const [frequency, endFrequency, duration, volume, delay, waveform = 'sine'] of soundEffects[type]) {
+                    // Fresh voices allow rapid taps to overlap without restarting a clip.
+                    const oscillator = this.context.createOscillator();
+                    const envelope = this.context.createGain();
+                    const filter = this.context.createBiquadFilter();
+                    const at = start + delay;
+                    oscillator.type = waveform;
+                    oscillator.frequency.setValueAtTime(frequency, at);
+                    oscillator.frequency.exponentialRampToValueAtTime(endFrequency, at + duration);
+                    filter.type = 'lowpass';
+                    filter.frequency.value = 2400;
+                    filter.Q.value = 0.5;
+                    envelope.gain.setValueAtTime(0, at);
+                    envelope.gain.linearRampToValueAtTime(volume, at + 0.006);
+                    envelope.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+                    envelope.gain.linearRampToValueAtTime(0, at + duration + 0.01);
+                    oscillator.connect(filter);
+                    filter.connect(envelope);
+                    envelope.connect(this.output);
+                    oscillator.onended = () => {
+                        oscillator.disconnect();
+                        filter.disconnect();
+                        envelope.disconnect();
+                        this.voices.delete(oscillator);
+                    };
+                    this.voices.add(oscillator);
+                    oscillator.start(at);
+                    oscillator.stop(at + duration + 0.015);
+                }
+            } catch {
+                this.stop();
+            }
+        };
+        if (this.resuming) this.resuming.then(schedule).catch(() => {});
+        else schedule();
+    },
+
+    stop() {
+        this.generation += 1;
+        for (const voice of this.voices) {
+            try { voice.stop(); } catch { /* Already ended. */ }
+        }
+        this.voices.clear();
+    },
+
+    toggle(event) {
+        this.enabled = !this.enabled;
+        if (!this.enabled) this.stop();
+        else this.unlock(event);
+        try { localStorage.setItem('wordleSoundEnabled', String(this.enabled)); }
+        catch { /* Keep the preference for this session if storage is unavailable. */ }
+        updateSoundButtonUI();
+    }
+};
+
+function updateSoundButtonUI() {
+    const button = document.getElementById('soundToggle');
+    if (!button) return;
+    const label = t(soundManager.enabled ? 'muteSound' : 'enableSound');
+    button.setAttribute('aria-label', label);
+    button.title = label;
+    button.dataset.muted = String(!soundManager.enabled);
 }
 
 const keyboardLayouts = {
@@ -286,6 +410,7 @@ function updateInterfaceLanguage() {
     updateLanguageButtonUI();
     updateGameMeta();
     updateHintUI();
+    updateSoundButtonUI();
 }
 
 function updateGameMeta() {
@@ -427,6 +552,7 @@ async function useHint() {
         revealedHintPositions.add(data.position);
         revealedHintLetters.set(data.position, data.letter);
         renderPersistentHints(data.position);
+        soundManager.play('hint');
         if (currentRow === hintRowIndex) currentCol = getNextEditablePosition(currentRow, 0);
         showMessage(t('hintRevealed', { letter: displayLetter(data.letter) }));
     } catch (error) {
@@ -538,6 +664,8 @@ async function submitGuess() {
     if (!isRowComplete(submittedRow)) return showMessage(t('mustBeFiveLetters'));
 
     inputLocked = true;
+    soundManager.play('submit');
+    const soundGeneration = soundManager.generation;
     if (gameReady) await gameReady;
     if (submittedVersion !== gameVersion || submittedRow !== currentRow || gameOver) return;
 
@@ -594,7 +722,11 @@ async function submitGuess() {
             languageLocked = false;
             recordGame(true);
             updateGameMeta();
-            setTimeout(() => showPopup(data.attempts, true), 600);
+            setTimeout(() => {
+                if (submittedVersion !== gameVersion) return;
+                soundManager.play('win', soundGeneration);
+                showPopup(data.attempts, true);
+            }, 600);
             updateLanguageButtonUI();
             return;
         }
@@ -604,7 +736,11 @@ async function submitGuess() {
             languageLocked = false;
             recordGame(false);
             updateGameMeta();
-            setTimeout(() => showPopup(data.attempts, false), 600);
+            setTimeout(() => {
+                if (submittedVersion !== gameVersion) return;
+                soundManager.play('lose', soundGeneration);
+                showPopup(data.attempts, false);
+            }, 600);
             updateLanguageButtonUI();
         } else {
             currentRow++;
@@ -628,6 +764,7 @@ function rejectInvalidWord(rowIndex, version) {
     const tiles = getRowTiles(rowIndex);
 
     showMessage(t('wordNotInList'));
+    soundManager.play('invalid');
     if (row) {
         row.classList.remove('shake', 'invalid-word');
         void row.offsetWidth;
@@ -658,6 +795,8 @@ function rejectInvalidWord(rowIndex, version) {
 
 function updateBoard(guess, result, rowIndex) {
     const tiles = document.querySelectorAll(`.row:nth-child(${rowIndex + 1}) .tile`);
+    const version = gameVersion;
+    const soundGeneration = soundManager.generation;
 
     tiles.forEach((tile, i) => {
         tile.textContent = selectedLanguage === 'turkish'
@@ -667,7 +806,9 @@ function updateBoard(guess, result, rowIndex) {
         tile.classList.remove('flip', 'correct', 'present', 'absent', 'hint-reveal', 'invalid', 'pop');
 
         setTimeout(() => {
+            if (version !== gameVersion) return;
             tile.classList.add('flip', result[i]);
+            if (i === 0) soundManager.play('reveal', soundGeneration);
         }, i * 100);
     });
 }
@@ -733,6 +874,7 @@ function showPopup(attempts, won = false) {
 
 function resetGame() {
     gameVersion += 1;
+    soundManager.stop();
     clearTimeout(invalidClearTimer);
     invalidClearTimer = null;
     guesses = [];
@@ -780,6 +922,7 @@ function handleKeyPress(key) {
             tiles[position].dataset.state = 'empty';
             tiles[position].classList.remove('pop');
             currentCol = position;
+            soundManager.play('backspace');
             break;
         }
     } else if (/^[A-Za-zÇçĞğıİÖöŞşÜü]$/.test(key) && currentCol < 5) {
@@ -792,6 +935,7 @@ function handleKeyPress(key) {
         void tiles[position].offsetWidth;
         tiles[position].classList.add('pop');
         currentCol = getNextEditablePosition(currentRow, position + 1);
+        soundManager.play('key');
     }
 }
 
@@ -841,7 +985,15 @@ function init() {
     renderStats();
 
     if (!keyboardListenerAttached) {
+        document.addEventListener('pointerdown', event => soundManager.unlock(event), { capture: true, passive: true });
         document.addEventListener('keydown', e => {
+            soundManager.unlock(e);
+            // Let focused controls activate natively; avoid Enter also submitting a guess.
+            if (e.target.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+            const control = e.target.closest?.('button');
+            if (control && !control.classList.contains('key') && (e.key === 'Enter' || e.key === ' ')) return;
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            if (e.key === 'Enter' || e.key === 'Backspace') e.preventDefault();
             handleKeyPress(e.key);
         });
         keyboardListenerAttached = true;
@@ -852,6 +1004,7 @@ function init() {
 // ================= START =================
 
 document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('soundToggle')?.addEventListener('click', event => soundManager.toggle(event));
     const hintButton = document.getElementById('hintButton');
     if (hintButton) {
         hintButton.addEventListener('click', useHint);
