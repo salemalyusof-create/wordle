@@ -2,11 +2,157 @@
 const API_URL = 'http://127.0.0.1:8080';
 let useBackend = ['localhost', '127.0.0.1'].includes(window.location.hostname);
 
-let selectedLanguage = 'english';
+const supportedLanguages = new Set(['english', 'turkish']);
+
+function getInitialLanguage() {
+    try {
+        const storedLanguage = localStorage.getItem('wordleLanguage');
+        return supportedLanguages.has(storedLanguage) ? storedLanguage : 'english';
+    } catch {
+        return 'english';
+    }
+}
+
+let selectedLanguage = getInitialLanguage();
 let sessionId = null;
 let words = [];
 let secretWord = '';
 let localAttempts = 0;
+
+const translations = {
+    english: {
+        pageTitle: 'Wordle Game',
+        dailyChallenge: 'DAILY WORD CHALLENGE',
+        subtitle: 'Guess the word. Beat the challenge.',
+        languageSelection: 'Language selection',
+        englishLanguage: 'English',
+        turkishLanguage: 'Turkish',
+        gameStatusLabel: 'Game status',
+        currentRun: 'CURRENT RUN',
+        firstGuess: 'Make your first guess',
+        keepGoing: 'Keep the momentum going',
+        roundComplete: 'Round complete',
+        attempts: 'ATTEMPTS',
+        hint: 'HINT',
+        hintsLeft: '{remaining} left',
+        useHint: 'Use hint, {remaining} remaining',
+        wordGuesses: 'Word guesses',
+        submitInstruction: 'to submit',
+        eraseInstruction: 'to erase',
+        gameInformation: 'Game information',
+        howToPlay: 'How to play',
+        howToPlayDescription: 'Find the hidden five-letter word in six tries.',
+        rightLetterRightSpot: 'Right letter, right spot',
+        rightLetterWrongSpot: 'Right letter, wrong spot',
+        notInWord: 'Not in the word',
+        showHowToPlay: 'Show how to play',
+        hideHowToPlay: 'Hide how to play',
+        yourStats: 'Your stats',
+        played: 'Played',
+        won: 'Won',
+        streak: 'Streak',
+        keyboard: 'KEYBOARD',
+        yourTurn: 'Your turn',
+        onScreenKeyboard: 'On-screen keyboard',
+        enterKey: 'Enter key',
+        backspaceKey: 'Backspace key',
+        mustBeFiveLetters: 'Must be 5 letters',
+        wordNotInList: 'Word not in list',
+        validationFailed: 'Validation failed',
+        networkError: 'Network error',
+        unableToLoadHint: 'Unable to load a hint',
+        allLettersRevealed: 'All letters are already revealed',
+        noHintsRemaining: 'No hints remaining',
+        invalidSession: 'Invalid game session',
+        unexpectedError: 'Something went wrong',
+        hintRevealed: 'Hint revealed: {letter}',
+        niceWork: 'NICE WORK',
+        roundCompleteHeading: 'ROUND COMPLETE',
+        cleverSolve: 'A clever solve.',
+        wordGotAway: 'The word got away.',
+        playAgain: 'Play Again',
+        wonMessage: 'You won in {attempts} attempts!',
+        lostMessage: 'Game over after {attempts} attempts.',
+        changeLanguageConfirm: 'Changing language will reset your current progress. Continue?'
+    },
+    turkish: {
+        pageTitle: 'Wordle Oyunu',
+        dailyChallenge: 'GÜNLÜK KELİME MEYDAN OKUMASI',
+        subtitle: 'Kelimeyi tahmin et. Mücadeleyi kazan.',
+        languageSelection: 'Dil seçimi',
+        englishLanguage: 'İngilizce',
+        turkishLanguage: 'Türkçe',
+        gameStatusLabel: 'Oyun durumu',
+        currentRun: 'MEVCUT TUR',
+        firstGuess: 'İlk tahminini yap',
+        keepGoing: 'Devam et',
+        roundComplete: 'Tur tamamlandı',
+        attempts: 'DENEMELER',
+        hint: 'İPUCU',
+        hintsLeft: '{remaining} kaldı',
+        useHint: 'İpucu kullan, {remaining} ipucu kaldı',
+        wordGuesses: 'Kelime tahminleri',
+        submitInstruction: 'ile gönder',
+        eraseInstruction: 'ile sil',
+        gameInformation: 'Oyun bilgileri',
+        howToPlay: 'Nasıl Oynanır',
+        howToPlayDescription: 'Gizli beş harfli kelimeyi altı denemede bul.',
+        rightLetterRightSpot: 'Doğru harf, doğru yer',
+        rightLetterWrongSpot: 'Doğru harf, yanlış yer',
+        notInWord: 'Kelimede yok',
+        showHowToPlay: 'Nasıl oynanır bölümünü göster',
+        hideHowToPlay: 'Nasıl oynanır bölümünü gizle',
+        yourStats: 'İstatistiklerin',
+        played: 'Oynanan',
+        won: 'Kazanılan',
+        streak: 'Seri',
+        keyboard: 'KLAVYE',
+        yourTurn: 'Sıra sende',
+        onScreenKeyboard: 'Ekran klavyesi',
+        enterKey: 'Enter tuşu',
+        backspaceKey: 'Backspace tuşu',
+        mustBeFiveLetters: '5 harf girmelisiniz',
+        wordNotInList: 'Kelime listede yok',
+        validationFailed: 'Doğrulama başarısız oldu',
+        networkError: 'Ağ hatası',
+        unableToLoadHint: 'İpucu yüklenemedi',
+        allLettersRevealed: 'Tüm harfler zaten açıklandı',
+        noHintsRemaining: 'İpucu hakkınız kalmadı',
+        invalidSession: 'Oyun oturumu geçersiz',
+        unexpectedError: 'Bir hata oluştu',
+        hintRevealed: 'İpucu açıldı: {letter}',
+        niceWork: 'HARİKA!',
+        roundCompleteHeading: 'TUR TAMAMLANDI',
+        cleverSolve: 'Güzel çözdün!',
+        wordGotAway: 'Kelimeyi bulamadın.',
+        playAgain: 'Tekrar Oyna',
+        wonMessage: '{attempts} denemede kazandın!',
+        lostMessage: 'Oyun {attempts} denemeden sonra sona erdi.',
+        changeLanguageConfirm: 'Dili değiştirmek mevcut ilerlemenizi sıfırlayacak. Devam etmek istiyor musunuz?'
+    }
+};
+
+function t(key, replacements = {}) {
+    const template = translations[selectedLanguage]?.[key]
+        ?? translations.english[key]
+        ?? key;
+
+    return Object.entries(replacements).reduce(
+        (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
+        template
+    );
+}
+
+const serverErrorTranslationKeys = {
+    'Invalid session': 'invalidSession',
+    'No hints remaining': 'noHintsRemaining',
+    'All letters are already revealed': 'allLettersRevealed',
+    'Guess must be 5 letters': 'mustBeFiveLetters'
+};
+
+function translateServerError(error) {
+    return t(serverErrorTranslationKeys[error] || 'unexpectedError');
+}
 
 const keyboardLayouts = {
     english: [
@@ -74,13 +220,13 @@ function evaluateGuess(guess, secret) {
 
 // Handle language selection
 function handleLanguageSelect(language) {
-    if (language === selectedLanguage) {
+    if (!supportedLanguages.has(language) || language === selectedLanguage) {
         return;
     }
 
     const isActiveRound = guesses.length > 0 && !gameOver;
     if (isActiveRound) {
-        const confirmed = window.confirm('Changing language will reset your current progress. Continue?');
+        const confirmed = window.confirm(t('changeLanguageConfirm'));
         if (!confirmed) {
             updateLanguageButtonUI();
             return;
@@ -88,7 +234,11 @@ function handleLanguageSelect(language) {
     }
 
     selectedLanguage = language;
-    localStorage.setItem('wordleLanguage', language);
+    try {
+        localStorage.setItem('wordleLanguage', language);
+    } catch (error) {
+        console.warn('Could not save the selected language:', error);
+    }
     resetGame();
 }
 
@@ -96,17 +246,46 @@ function handleLanguageSelect(language) {
 function updateLanguageButtonUI() {
     const englishBtn = document.getElementById('englishBtn');
     const turkishBtn = document.getElementById('turkishBtn');
-    const isLocked = guesses.length > 0 && !gameOver;
 
     if (englishBtn) {
-        englishBtn.classList.toggle('active', selectedLanguage === 'english');
-        englishBtn.disabled = isLocked && selectedLanguage !== 'english';
+        const isEnglish = selectedLanguage === 'english';
+        englishBtn.classList.toggle('active', isEnglish);
+        englishBtn.setAttribute('aria-pressed', String(isEnglish));
+        englishBtn.disabled = false;
     }
 
     if (turkishBtn) {
-        turkishBtn.classList.toggle('active', selectedLanguage === 'turkish');
-        turkishBtn.disabled = isLocked && selectedLanguage !== 'turkish';
+        const isTurkish = selectedLanguage === 'turkish';
+        turkishBtn.classList.toggle('active', isTurkish);
+        turkishBtn.setAttribute('aria-pressed', String(isTurkish));
+        turkishBtn.disabled = false;
     }
+}
+
+function updateInterfaceLanguage() {
+    document.documentElement.lang = selectedLanguage === 'turkish' ? 'tr' : 'en';
+
+    document.querySelectorAll('[data-i18n]').forEach(element => {
+        element.textContent = t(element.dataset.i18n);
+    });
+
+    document.querySelectorAll('[data-i18n-aria-label]').forEach(element => {
+        element.setAttribute('aria-label', t(element.dataset.i18nAriaLabel));
+    });
+
+    const howToPlayToggle = document.getElementById('howToPlayToggle');
+    if (howToPlayToggle) {
+        const isExpanded = howToPlayToggle.getAttribute('aria-expanded') === 'true';
+        howToPlayToggle.setAttribute('aria-label', t(isExpanded ? 'hideHowToPlay' : 'showHowToPlay'));
+    }
+
+    document.querySelectorAll('[data-key-action]').forEach(key => {
+        key.setAttribute('aria-label', t(key.dataset.keyAction === 'enter' ? 'enterKey' : 'backspaceKey'));
+    });
+
+    updateLanguageButtonUI();
+    updateGameMeta();
+    updateHintUI();
 }
 
 function updateGameMeta() {
@@ -115,7 +294,7 @@ function updateGameMeta() {
     const dots = document.getElementById('attemptDots');
 
     if (count) count.textContent = `${guesses.length} / ${maxAttempts}`;
-    if (status) status.textContent = gameOver ? 'Round complete' : guesses.length ? 'Keep the momentum going' : 'Make your first guess';
+    if (status) status.textContent = gameOver ? t('roundComplete') : guesses.length ? t('keepGoing') : t('firstGuess');
     if (dots) {
         dots.innerHTML = Array.from({ length: maxAttempts }, (_, index) =>
             `<i class="${index < guesses.length ? 'used' : ''}"></i>`
@@ -127,10 +306,10 @@ function updateHintUI() {
     const button = document.getElementById('hintButton');
     const count = document.getElementById('hintCount');
     const remaining = Math.max(0, 2 - hintsUsed);
-    if (count) count.textContent = `${remaining} left`;
+    if (count) count.textContent = t('hintsLeft', { remaining });
     if (button) {
         button.disabled = remaining === 0 || gameOver || hintRequestPending;
-        button.setAttribute('aria-label', `Use hint, ${remaining} remaining`);
+        button.setAttribute('aria-label', t('useHint', { remaining }));
     }
 }
 
@@ -231,15 +410,15 @@ async function useHint() {
             const excludedSet = new Set(excluded ? excluded.split(',').map(Number) : []);
             const candidates = [0, 1, 2, 3, 4].filter(position => !excludedSet.has(position) && !revealedHintPositions.has(position));
             if (!candidates.length) {
-                data = { error: 'All letters are already revealed' };
+                data = { errorKey: 'allLettersRevealed' };
             } else {
                 const position = candidates[Math.floor(Math.random() * candidates.length)];
                 data = { position, letter: Array.from(secretWord)[position] };
             }
         }
         if (requestVersion !== gameVersion) return;
-        if (data.error) {
-            showMessage(data.error);
+        if (data.error || data.errorKey) {
+            showMessage(data.errorKey ? t(data.errorKey) : translateServerError(data.error));
             updateHintUI();
             return;
         }
@@ -249,11 +428,11 @@ async function useHint() {
         revealedHintLetters.set(data.position, data.letter);
         renderPersistentHints(data.position);
         if (currentRow === hintRowIndex) currentCol = getNextEditablePosition(currentRow, 0);
-        showMessage(`Hint revealed: ${displayLetter(data.letter)}`);
+        showMessage(t('hintRevealed', { letter: displayLetter(data.letter) }));
     } catch (error) {
         if (requestVersion !== gameVersion) return;
         console.error('Hint request failed:', error);
-        showMessage('Unable to load a hint');
+        showMessage(t('unableToLoadHint'));
     } finally {
         if (requestVersion === gameVersion) {
             hintRequestPending = false;
@@ -356,7 +535,7 @@ async function submitGuess() {
     if (inputLocked || gameOver) return;
     const submittedRow = currentRow;
     const submittedVersion = gameVersion;
-    if (!isRowComplete(submittedRow)) return showMessage('Must be 5 letters');
+    if (!isRowComplete(submittedRow)) return showMessage(t('mustBeFiveLetters'));
 
     inputLocked = true;
     if (gameReady) await gameReady;
@@ -379,7 +558,7 @@ async function submitGuess() {
         if (submittedVersion !== gameVersion) return;
         console.error('Validation error:', e);
         inputLocked = false;
-        return showMessage('Validation failed');
+        return showMessage(t('validationFailed'));
     }
 
     try {
@@ -396,7 +575,7 @@ async function submitGuess() {
         if (submittedVersion !== gameVersion || submittedRow !== currentRow) return;
 
         if (data.error) {
-            showMessage(data.error);
+            showMessage(translateServerError(data.error));
             inputLocked = false;
             return;
         }
@@ -415,7 +594,7 @@ async function submitGuess() {
             languageLocked = false;
             recordGame(true);
             updateGameMeta();
-            setTimeout(() => showPopup(`You won in ${data.attempts} attempts!`, true), 600);
+            setTimeout(() => showPopup(data.attempts, true), 600);
             updateLanguageButtonUI();
             return;
         }
@@ -425,7 +604,7 @@ async function submitGuess() {
             languageLocked = false;
             recordGame(false);
             updateGameMeta();
-            setTimeout(() => showPopup(`Game over after ${data.attempts} attempts.`, false), 600);
+            setTimeout(() => showPopup(data.attempts, false), 600);
             updateLanguageButtonUI();
         } else {
             currentRow++;
@@ -436,7 +615,7 @@ async function submitGuess() {
     } catch(e) {
         if (submittedVersion !== gameVersion) return;
         console.error('Guess submission error:', e);
-        showMessage('Network error');
+        showMessage(t('networkError'));
         inputLocked = false;
     }
 }
@@ -448,7 +627,7 @@ function rejectInvalidWord(rowIndex, version) {
     const typedLetters = getTypedLetters(rowIndex);
     const tiles = getRowTiles(rowIndex);
 
-    showMessage('Word not in list');
+    showMessage(t('wordNotInList'));
     if (row) {
         row.classList.remove('shake', 'invalid-word');
         void row.offsetWidth;
@@ -533,15 +712,15 @@ function showMessage(msg) {
     toastTimer = setTimeout(() => toast.classList.remove('visible'), 2200);
 }
 
-function showPopup(message, won = false) {
+function showPopup(attempts, won = false) {
     let popup = document.getElementById('popup');
     if (!popup) return;
     popup.innerHTML = `
-        <div class="popup-content" role="dialog" aria-modal="true" aria-labelledby="popupTitle">
-            <p class="eyebrow">${won ? 'NICE WORK' : 'ROUND COMPLETE'}</p>
-            <h2 id="popupTitle">${won ? 'A clever solve.' : 'The word got away.'}</h2>
-            <p id="popupMessage">${message}</p>
-            <button id="closePopup" type="button">Play Again</button>
+        <div class="popup-content" role="dialog" aria-modal="true" aria-labelledby="popupTitle" aria-describedby="popupMessage">
+            <p class="eyebrow">${t(won ? 'niceWork' : 'roundCompleteHeading')}</p>
+            <h2 id="popupTitle">${t(won ? 'cleverSolve' : 'wordGotAway')}</h2>
+            <p id="popupMessage">${t(won ? 'wonMessage' : 'lostMessage', { attempts })}</p>
+            <button id="closePopup" type="button">${t('playAgain')}</button>
         </div>
     `;
     popup.classList.toggle('won', won);
@@ -571,7 +750,7 @@ function resetGame() {
     keyboardLetterStatuses.clear();
     gameReady = initializeGame();
     updateKeyboardLayout();
-    updateGameMeta();
+    updateInterfaceLanguage();
 
     document.querySelectorAll('.tile').forEach(t => {
         t.textContent = '';
@@ -580,8 +759,6 @@ function resetGame() {
     });
     document.querySelectorAll('.row').forEach(row => row.classList.remove('invalid-word', 'shake'));
 
-    updateLanguageButtonUI();
-    updateHintUI();
     renderStats();
 }
 
@@ -634,9 +811,12 @@ function updateKeyboardLayout() {
             const btn = document.createElement('button');
             btn.className = 'key';
             btn.textContent = letter;
-            
+            btn.type = 'button';
+
             if (letter === 'Enter' || letter === '⌫') {
                 btn.classList.add('wide');
+                btn.dataset.keyAction = letter === 'Enter' ? 'enter' : 'backspace';
+                btn.setAttribute('aria-label', t(letter === 'Enter' ? 'enterKey' : 'backspaceKey'));
             }
             
             btn.onclick = () => handleKeyPress(letter);
@@ -657,8 +837,7 @@ function init() {
     appInitialized = true;
     gameReady = initializeGame();
     updateKeyboardLayout();
-    updateGameMeta();
-    updateHintUI();
+    updateInterfaceLanguage();
     renderStats();
 
     if (!keyboardListenerAttached) {
@@ -673,8 +852,6 @@ function init() {
 // ================= START =================
 
 document.addEventListener('DOMContentLoaded', () => {
-    updateLanguageButtonUI();
-
     const hintButton = document.getElementById('hintButton');
     if (hintButton) {
         hintButton.addEventListener('click', useHint);
@@ -702,7 +879,7 @@ document.addEventListener('DOMContentLoaded', () => {
         howToPlayToggle.addEventListener('click', () => {
             const expanded = howToPlayCard.classList.toggle('expanded');
             howToPlayToggle.setAttribute('aria-expanded', String(expanded));
-            howToPlayToggle.setAttribute('aria-label', expanded ? 'Hide how to play' : 'Show how to play');
+            howToPlayToggle.setAttribute('aria-label', t(expanded ? 'hideHowToPlay' : 'showHowToPlay'));
         });
     }
 
