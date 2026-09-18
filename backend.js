@@ -8,7 +8,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const HOST = '127.0.0.1';
 const PORT = 8080;
-const ADMIN_EMAIL = 'salemalyusof@gmail.com';
 const games = new Map();
 const fallbackWords = {
     turkish: ['elmas', 'cadde', 'camci', 'edebi', 'fakat', 'istek'],
@@ -77,20 +76,22 @@ function handleRequest(request, response) {
         const language = languageFrom(query.get('lang'));
         const sessionId = `sess_${crypto.randomUUID()}`;
         const words = loadWords(language);
-        games.set(sessionId, { secret: words[crypto.randomInt(words.length)], language, attempts: 0, hints: 0, revealed: new Set() });
+        games.set(sessionId, { secret: words[crypto.randomInt(words.length)], language, attempts: 0, hints: 0, revealed: new Set(), outcome: null });
         return sendJson(response, 200, { sessionId, message: 'Game initialized' });
     }
     if (url.pathname === '/api/words') return sendJson(response, 200, { words: loadWords(query.get('lang')) });
-    if (url.pathname === '/api/secret') {
+    if (url.pathname === '/api/giveup') {
         const game = getGame(query.get('sid'), response);
         if (!game) return;
-        return query.get('adminEmail') === ADMIN_EMAIL
-            ? sendJson(response, 200, { secret: game.secret })
-            : sendJson(response, 403, { error: 'Administrator access required' });
+        // End the round BEFORE disclosing the answer. Retrying a lost response
+        // is safe: it returns the same terminal result without changing attempts.
+        if (!game.outcome) game.outcome = 'giveup';
+        return sendJson(response, 200, { gameOver: true, outcome: game.outcome, attempts: game.attempts, word: game.secret });
     }
     if (url.pathname === '/api/hint') {
         const game = getGame(query.get('sid'), response);
         if (!game) return;
+        if (game.outcome) return sendJson(response, 409, { error: 'Round already finished' });
         if (game.hints >= 2) return sendJson(response, 200, { error: 'No hints remaining' });
         const excluded = excludedPositions(query.get('exclude'));
         const candidates = [0, 1, 2, 3, 4].filter(position => !game.revealed.has(position) && !excluded.has(position));
@@ -103,12 +104,15 @@ function handleRequest(request, response) {
     if (url.pathname === '/api/guess') {
         const game = getGame(query.get('sid'), response);
         if (!game) return;
+        if (game.outcome) return sendJson(response, 409, { error: 'Round already finished' });
         const guess = query.get('guess') || '';
         if (characters(guess).length !== 5) return sendJson(response, 200, { error: 'Guess must be 5 letters' });
         const result = evaluateGuess(guess, game.secret, game.language);
         game.attempts += 1;
         const won = result.every(state => state === 'correct');
-        return sendJson(response, 200, { guess, result, won, attempts: game.attempts, gameOver: won || game.attempts >= 6 });
+        if (won) game.outcome = 'win';
+        else if (game.attempts >= 6) game.outcome = 'loss';
+        return sendJson(response, 200, { guess, result, won, attempts: game.attempts, gameOver: Boolean(game.outcome), ...(game.outcome === 'loss' ? { word: game.secret } : {}) });
     }
     if (url.pathname === '/api/validate') {
         const language = languageFrom(query.get('lang'));
@@ -120,10 +124,11 @@ function handleRequest(request, response) {
 
 const server = http.createServer((request, response) => {
     if (request.method === 'OPTIONS') {
-        response.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' });
+        response.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' });
         return response.end();
     }
-    if (request.method !== 'GET') return sendJson(response, 405, { error: 'Method not allowed' });
+    const isGiveUp = new URL(request.url, `http://${HOST}:${PORT}`).pathname === '/api/giveup';
+    if (request.method !== (isGiveUp ? 'POST' : 'GET')) return sendJson(response, 405, { error: 'Method not allowed' });
     if (request.url === '/' || request.url === '/index.html') {
         response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
         return response.end('Backend API running at /api/*\n');

@@ -65,7 +65,12 @@ button { font: inherit; }
 .sound-button[data-muted="true"] .sound-muted { opacity: 1; }
 .main { animation: fade-up .5s ease both; display: flex; flex-direction: column; gap: 18px; margin: 0 auto; max-width: 1020px; }
 .main.hidden { display: none !important; }
-.game-meta { align-items: end; display: flex; justify-content: space-between; }
+.game-meta { align-items: end; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
+.round-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.give-up-button { background: rgba(255, 155, 155, .04); border: 1px solid rgba(255, 155, 155, .24); border-radius: 11px; color: #d5a6a6; cursor: pointer; font-size: 11px; font-weight: 800; letter-spacing: .08em; min-height: 44px; padding: 12px 14px; transition: .2s ease; }
+.give-up-button:hover:not(:disabled) { background: rgba(255, 155, 155, .1); border-color: rgba(255, 155, 155, .45); transform: translateY(-1px); }
+.give-up-button:disabled { cursor: not-allowed; opacity: .45; }
+.give-up-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .game-meta h2 { font-family: Georgia, serif; font-size: clamp(20px, 3vw, 27px); font-weight: 400; margin: 0; }
 .attempt-meter { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; min-width: 150px; padding: 10px 13px; }
 .meta-label { color: var(--muted); display: block; font-size: 9px; font-weight: 800; letter-spacing: .16em; }
@@ -162,6 +167,10 @@ button { font: inherit; }
 .popup-content h2 { font-family: Georgia, serif; font-size: 30px; font-weight: 400; margin: 0 0 9px; }
 .popup-content p { color: var(--muted); line-height: 1.5; margin: 0 0 20px; }
 .popup-content button { background: var(--accent); border: 0; border-radius: 9px; color: #092018; cursor: pointer; font-weight: 800; padding: 12px 18px; }
+.answer-reveal { background: rgba(230, 184, 92, .07); border: 1px solid rgba(230, 184, 92, .2); border-radius: 10px; margin: 18px 0; padding: 14px; }
+.answer-reveal span { color: var(--muted); display: block; font-size: 12px; }
+.answer-reveal strong { color: var(--present); display: block; font-size: 28px; letter-spacing: .15em; margin-top: 8px; overflow-wrap: anywhere; }
+.popup-content p:empty { display: none; }
 .modal.won .popup-content { border-color: rgba(73, 201, 139, .55); box-shadow: 0 0 0 1px rgba(73, 201, 139, .12), 0 30px 90px rgba(24, 146, 103, .2); }
 .modal.won .popup-content::before { color: var(--correct); content: "✦  ✧  ✦"; display: block; font-size: 22px; letter-spacing: .4em; margin-bottom: 15px; }
 .modal:not(.won) .popup-content { border-color: rgba(230, 184, 92, .35); }
@@ -216,7 +225,8 @@ button { font: inherit; }
     .how-to-play-card.expanded + .stats-card { margin-top: 200px; }
     .login-form { padding: 27px 22px; }
     .game-meta { align-items: stretch; display: grid; grid-template-columns: 1fr auto; }
-    .hint-button { grid-column: 1 / -1; justify-content: center; margin-top: 2px; }
+    .round-actions { grid-column: 1 / -1; margin-top: 2px; }
+    .round-actions > button { flex: 1; justify-content: center; min-height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }

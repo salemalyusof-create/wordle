@@ -34,6 +34,12 @@ const translations = {
         roundComplete: 'Round complete',
         attempts: 'ATTEMPTS',
         hint: 'HINT',
+        giveUp: 'GIVE UP',
+        giveUpConfirm: 'Are you sure you want to give up? The secret word will be revealed.',
+        gaveUpMessage: 'You gave up.',
+        theWordWas: 'The word was:',
+        giveUpFailed: 'Unable to end the round. Please try again.',
+        roundBusy: 'Please wait for the current action to finish.',
         hintsLeft: '{remaining} left',
         useHint: 'Use hint, {remaining} remaining',
         wordGuesses: 'Word guesses',
@@ -91,6 +97,12 @@ const translations = {
         roundComplete: 'Tur tamamlandı',
         attempts: 'DENEMELER',
         hint: 'İPUCU',
+        giveUp: 'PES ET',
+        giveUpConfirm: 'Pes etmek istediğinizden emin misiniz? Gizli kelime gösterilecek.',
+        gaveUpMessage: 'Pes ettin.',
+        theWordWas: 'Kelime:',
+        giveUpFailed: 'Tur sonlandırılamadı. Lütfen tekrar deneyin.',
+        roundBusy: 'Lütfen mevcut işlemin tamamlanmasını bekleyin.',
         hintsLeft: '{remaining} kaldı',
         useHint: 'İpucu kullan, {remaining} ipucu kaldı',
         wordGuesses: 'Kelime tahminleri',
@@ -149,6 +161,7 @@ function t(key, replacements = {}) {
 
 const serverErrorTranslationKeys = {
     'Invalid session': 'invalidSession',
+    'Round already finished': 'roundComplete',
     'No hints remaining': 'noHintsRemaining',
     'All letters are already revealed': 'allLettersRevealed',
     'Guess must be 5 letters': 'mustBeFiveLetters'
@@ -379,6 +392,8 @@ let inputLocked = false;
 let gameVersion = 0;
 let invalidClearTimer = null;
 let hintRequestPending = false;
+let giveUpPending = false;
+let roundReady = false;
 const keyboardStatusPriority = {
     absent: 1,
     present: 2,
@@ -483,6 +498,7 @@ function updateInterfaceLanguage() {
 }
 
 function updateGameMeta() {
+    updateGiveUpUI();
     const count = document.getElementById('attemptCount');
     const status = document.getElementById('gameStatus');
     const dots = document.getElementById('attemptDots');
@@ -502,8 +518,55 @@ function updateHintUI() {
     const remaining = Math.max(0, 2 - hintsUsed);
     if (count) count.textContent = t('hintsLeft', { remaining });
     if (button) {
-        button.disabled = remaining === 0 || gameOver || hintRequestPending;
+        button.disabled = remaining === 0 || gameOver || hintRequestPending || giveUpPending;
         button.setAttribute('aria-label', t('useHint', { remaining }));
+    }
+}
+
+function updateGiveUpUI() {
+    const button = document.getElementById('giveUpButton');
+    if (button) button.disabled = gameOver || giveUpPending || !roundReady;
+}
+
+async function giveUpGame() {
+    if (gameOver || giveUpPending || !roundReady) return;
+    // Serialize surrender with guesses/hints; never race a server mutation.
+    if (inputLocked || hintRequestPending) return showMessage(t('roundBusy'));
+    if (!window.confirm(t('giveUpConfirm'))) return;
+    const version = gameVersion;
+    giveUpPending = true;
+    inputLocked = true;
+    updateGiveUpUI();
+    updateHintUI();
+    try {
+        let result = { outcome: 'giveup', attempts: guesses.length, word: secretWord };
+        if (useBackend) {
+            const response = await fetch(`${API_URL}/api/giveup?sid=${encodeURIComponent(sessionId)}`, { method: 'POST' });
+            result = await response.json();
+            if (!response.ok || !result.gameOver || !['giveup', 'loss', 'win'].includes(result.outcome)) throw new Error('Give up failed');
+        }
+        if (version !== gameVersion) return;
+        if (typeof result.word !== 'string' || !result.word) throw new Error('Missing terminal answer');
+        gameOver = true;
+        languageLocked = false;
+        gameVersion += 1;
+        clearTimeout(invalidClearTimer);
+        soundManager.stop();
+        recordGame(result.outcome === 'win');
+        updateGameMeta();
+        updateLanguageButtonUI();
+        soundManager.play(result.outcome === 'win' ? 'win' : 'lose');
+        showPopup({ outcome: result.outcome, attempts: result.attempts, word: result.word });
+    } catch (error) {
+        if (version !== gameVersion) return;
+        showMessage(t('giveUpFailed'));
+    } finally {
+        if (version === gameVersion || (gameOver && giveUpPending)) {
+            giveUpPending = false;
+            inputLocked = gameOver;
+            updateGiveUpUI();
+            updateHintUI();
+        }
     }
 }
 
@@ -583,7 +646,7 @@ async function useHint() {
 
     try {
         if (gameReady) await gameReady;
-        if (requestVersion !== gameVersion || !sessionId) return;
+        if (requestVersion !== gameVersion || gameOver || !sessionId) return;
 
         const excludedPositions = new Set();
         document.querySelectorAll('.row').forEach((row, rowIndex) => {
@@ -610,7 +673,7 @@ async function useHint() {
                 data = { position, letter: Array.from(secretWord)[position] };
             }
         }
-        if (requestVersion !== gameVersion) return;
+        if (requestVersion !== gameVersion || gameOver) return;
         if (data.error || data.errorKey) {
             showMessage(data.errorKey ? t(data.errorKey) : translateServerError(data.error));
             updateHintUI();
@@ -625,7 +688,7 @@ async function useHint() {
         if (currentRow === hintRowIndex) currentCol = getNextEditablePosition(currentRow, 0);
         showMessage(t('hintRevealed', { letter: displayLetter(data.letter) }));
     } catch (error) {
-        if (requestVersion !== gameVersion) return;
+        if (requestVersion !== gameVersion || gameOver) return;
         console.error('Hint request failed:', error);
         showMessage(t('unableToLoadHint'));
     } finally {
@@ -673,47 +736,66 @@ function recordGame(won) {
 // ================= WORD LOGIC (Backend API) =================
 
 async function loadWords() {
+    const version = gameVersion;
     try {
         const wordSource = useBackend
             ? `${API_URL}/api/words?lang=${selectedLanguage}`
             : `${selectedLanguage}wordlist.txt`;
         const resp = await fetch(wordSource);
         if (!useBackend) {
-            words = (await resp.text()).split(/\r?\n/).map(word => word.trim()).filter(word => Array.from(word).length === 5);
+            const text = await resp.text();
+            if (version !== gameVersion) return;
+            words = text.split(/\r?\n/).map(word => word.trim()).filter(word => Array.from(word).length === 5);
         } else {
             const data = await resp.json();
+            if (version !== gameVersion) return;
             words = data.words || [];
         }
         if (words.length === 0) {
             words = ["APPLE", "BERRY", "CRANE", "SLATE", "PLANT", "BRAVE"];
         }
     } catch(e) {
+        if (version !== gameVersion) return;
         console.error('Failed to load words:', e);
         words = ["APPLE", "BERRY", "CRANE", "SLATE", "PLANT", "BRAVE"];
     }
 }
 
 async function initializeGame() {
+    const version = gameVersion;
+    roundReady = false;
+    sessionId = null;
+    secretWord = '';
+    updateGiveUpUI();
     try {
         if (useBackend) {
             const resp = await fetch(`${API_URL}/api/init?lang=${selectedLanguage}`);
             const data = await resp.json();
+            if (version !== gameVersion) return;
             sessionId = data.sessionId;
         } else {
             sessionId = `local_${Date.now()}`;
         }
         await loadWords();
+        if (version !== gameVersion) return;
         if (!useBackend) secretWord = words[Math.floor(Math.random() * words.length)];
     } catch(e) {
+        if (version !== gameVersion) return;
         console.error('Failed to initialize game:', e);
         if (useBackend) {
             useBackend = false;
             await loadWords();
+            if (version !== gameVersion) return;
         }
         if (!useBackend) {
             if (!words.length) words = ["apple", "berry", "crane", "slate", "plant", "brave"];
             secretWord = words[Math.floor(Math.random() * words.length)];
             sessionId = `local_${Date.now()}`;
+        }
+    } finally {
+        if (version === gameVersion) {
+            roundReady = Boolean(sessionId);
+            updateGiveUpUI();
         }
     }
 }
@@ -791,10 +873,11 @@ async function submitGuess() {
             languageLocked = false;
             recordGame(true);
             updateGameMeta();
+            updateHintUI();
             setTimeout(() => {
                 if (submittedVersion !== gameVersion) return;
                 soundManager.play('win', soundGeneration);
-                showPopup(data.attempts, true);
+                showPopup({ outcome: 'win', attempts: data.attempts });
             }, 600);
             updateLanguageButtonUI();
             return;
@@ -805,10 +888,11 @@ async function submitGuess() {
             languageLocked = false;
             recordGame(false);
             updateGameMeta();
+            updateHintUI();
             setTimeout(() => {
                 if (submittedVersion !== gameVersion) return;
                 soundManager.play('lose', soundGeneration);
-                showPopup(data.attempts, false);
+                showPopup({ outcome: 'loss', attempts: data.attempts, word: useBackend ? data.word : secretWord });
             }, 600);
             updateLanguageButtonUI();
         } else {
@@ -922,17 +1006,25 @@ function showMessage(msg) {
     toastTimer = setTimeout(() => toast.classList.remove('visible'), 2200);
 }
 
-function showPopup(attempts, won = false) {
+function showPopup({ outcome, attempts, word }) {
+    if (!gameOver) return;
+    clearTimeout(toastTimer);
+    document.getElementById('toast')?.classList.remove('visible');
+    const won = outcome === 'win';
+    const gaveUp = outcome === 'giveup';
     let popup = document.getElementById('popup');
     if (!popup) return;
     popup.innerHTML = `
         <div class="popup-content" role="dialog" aria-modal="true" aria-labelledby="popupTitle" aria-describedby="popupMessage">
             <p class="eyebrow">${t(won ? 'niceWork' : 'roundCompleteHeading')}</p>
-            <h2 id="popupTitle">${t(won ? 'cleverSolve' : 'wordGotAway')}</h2>
-            <p id="popupMessage">${t(won ? 'wonMessage' : 'lostMessage', { attempts })}</p>
+            <h2 id="popupTitle">${t(won ? 'cleverSolve' : gaveUp ? 'gaveUpMessage' : 'wordGotAway')}</h2>
+            ${!won && word ? `<div class="answer-reveal"><span>${t('theWordWas')}</span><strong id="revealedAnswer"></strong></div>` : ''}
+            <p id="popupMessage">${gaveUp ? '' : t(won ? 'wonMessage' : 'lostMessage', { attempts })}</p>
             <button id="closePopup" type="button">${t('playAgain')}</button>
         </div>
     `;
+    const answer = popup.querySelector('#revealedAnswer');
+    if (answer) answer.textContent = displayLetter(word);
     popup.classList.toggle('won', won);
     popup.setAttribute('aria-hidden', 'false');
     popup.querySelector('#closePopup').onclick = () => {
@@ -943,6 +1035,8 @@ function showPopup(attempts, won = false) {
 
 function resetGame() {
     gameVersion += 1;
+    clearTimeout(toastTimer);
+    document.getElementById('toast')?.classList.remove('visible');
     soundManager.stop();
     clearTimeout(invalidClearTimer);
     invalidClearTimer = null;
@@ -952,6 +1046,12 @@ function resetGame() {
     currentCol = 0;
     inputLocked = false;
     hintRequestPending = false;
+    giveUpPending = false;
+    const popup = document.getElementById('popup');
+    if (popup) {
+        popup.setAttribute('aria-hidden', 'true');
+        popup.replaceChildren();
+    }
     localAttempts = 0;
     languageLocked = false;
     hintsUsed = 0;
@@ -1084,6 +1184,7 @@ function init() {
 // ================= START =================
 
 document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('giveUpButton')?.addEventListener('click', giveUpGame);
     document.getElementById('soundToggle')?.addEventListener('click', event => soundManager.toggle(event));
     const hintButton = document.getElementById('hintButton');
     if (hintButton) {
